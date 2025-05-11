@@ -9,4 +9,4 @@ class SixtyIndexAnalysis:
 
     def init_sixty_index_average_value(self, ts_code):
         pro = ts.pro_api()
-        df = pro.index_daily(ts_code=ts_code, start_date='20180101', end_date='20181010')
+        df = pro.index_daily(ts_code=ts_code, start_date='20150101', end_date='20151010')

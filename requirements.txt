@@ -1,2 +1,2 @@
-tushare
-mysql-connector-python
+tushare~=1.4.21
+mysql-connector-python~=9.3.0

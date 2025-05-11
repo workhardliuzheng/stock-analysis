@@ -80,4 +80,24 @@ class DatabaseManager:
             print(f"Error: {e}")
             return None
 
+    def batch_insert(self, table, entities):
+        if not entities:
+            return
+
+        # 获取第一个实体的字典以确定列名
+        sample_data = entities[0].to_dict()
+        columns = ', '.join(sample_data.keys())
+        placeholders = ', '.join(['%s'] * len(sample_data))
+
+        # 构建批量插入的SQL查询
+        query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+
+        try:
+            cursor = self.connection.cursor()
+            values = [tuple(entity.to_dict().values()) for entity in entities]
+            cursor.executemany(query, values)
+            self.connection.commit()
+            print("批量数据插入成功")
+        except Error as e:
+            print(f"Error: {e}")
 
