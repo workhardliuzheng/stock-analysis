@@ -1,6 +1,7 @@
 # 这是一个示例 Python 脚本。
 import mysql_connect
 from mysql_connect.database_manager import DatabaseManager
+from stock_index_analysis.sixty_index_analysis import SixtyIndexAnalysis
 
 
 # 按 ⌃R 执行或将其替换为您的代码。
@@ -14,6 +15,9 @@ def print_hi(name):
 
 # 示例使用
 if __name__ == "__main__":
+    stock = SixtyIndexAnalysis()
+    stock.init_sixty_index_average_value('000001.SH', '20230501', '20241001')
+
     db_manager = DatabaseManager()  # 不需要传入配置文件路径
     db_manager.connect()
 

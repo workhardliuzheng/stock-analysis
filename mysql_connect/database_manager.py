@@ -1,18 +1,17 @@
 import mysql.connector
 from mysql.connector import Error
 import yaml
+from entity import content
 
 class DatabaseManager:
     # 固定的配置文件路径
-    CONFIG_FILE = 'config.yaml'
-
     def __init__(self):
         self.config = self.load_config()
         self.connection = None
 
     def load_config(self):
         """从固定路径加载配置文件"""
-        with open(DatabaseManager.CONFIG_FILE, 'r') as file:
+        with open(content.CONFIG_FILE, 'r') as file:
             config = yaml.safe_load(file)
         return config['database']
 

@@ -3,3 +3,4 @@ database:
   database: stock_analysis # 替换为你的数据库名称
   user: liuzheng       # 替换为你的数据库用户名
   password: liuzheng121  # 替换为你的数据库密码
+token: 49dd4d99eb45ca99bf9c6e13690b6b79daa756974e0fa235b6add6c3
