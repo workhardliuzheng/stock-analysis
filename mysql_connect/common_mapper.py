@@ -14,6 +14,7 @@ class CommonMapper:
     def select_base_entity(self, columns, condition):
         database_manager = DatabaseManager()
         database_manager.connect()
-        database_manager.select(table=self.table_name, columns=columns, condition=condition)
+        result = database_manager.select(table=self.table_name, columns=columns, condition=condition)
         database_manager.disconnect()
+        return result
 

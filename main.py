@@ -11,4 +11,6 @@ from stock_index_analysis.sixty_index_analysis import SixtyIndexAnalysis
 # 示例使用
 if __name__ == "__main__":
     stock = SixtyIndexAnalysis()
-    stock.init_sixty_index_average_value('000001.SH', '20250516', '20250516')
+    stock.additional_data()
+    #stock.init_sixty_index_average_value('399001.SZ', '20150512', '20150513')
+    print("同步结束")

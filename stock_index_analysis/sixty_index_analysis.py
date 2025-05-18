@@ -23,6 +23,17 @@ class SixtyIndexAnalysis:
         for ts_code in content.TS_CODE_LIST:
             self.init_sixty_index_average_value(ts_code, TimeUtils.get_current_date_str(), TimeUtils.get_current_date_str())
 
+    def additional_data(self):
+        for ts_code in content.TS_CODE_LIST:
+            mapper = SixtyIndexMapper()
+            max_trade_datetime = mapper.get_max_trade_time(ts_code)
+            if max_trade_datetime is None:
+                max_trade_date = content.HISTORY_START_DATE
+            else:
+                max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
+            start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
+            self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
+
     def init_sixty_index_average_value(self, ts_code, start_date, end_date):
         pro = TuShareFactory.build_api_client()
 
@@ -44,7 +55,7 @@ class SixtyIndexAnalysis:
             daily = pro.index_daily(**{
                     "ts_code": ts_code,
                     "start_date": date_ago,
-                    "end_date": TimeUtils.get_n_days_before_or_after(this_loop_date, 1, is_before=False),
+                    "end_date": this_loop_date,
                     "limit": 100
                 }, fields=INDEX_FIELDS)
             sixty_index_average_value = daily.iloc[0:60]['close'].mean()

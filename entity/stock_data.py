@@ -20,3 +20,9 @@ class StockData(BaseEntity):
         self.average_amount = average_amount
         self.deviation_rate = deviation_rate
         self.name = name
+
+    def get_trade_date(self):
+        return self.trade_date
+
+    def get_ts_code(self):
+        return self.ts_code
