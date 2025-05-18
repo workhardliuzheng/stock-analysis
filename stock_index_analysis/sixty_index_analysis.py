@@ -4,17 +4,21 @@ import yaml
 from entity import content
 from entity.stock_data import StockData
 from mysql_connect.common_mapper import CommonMapper
+from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from tu_share_factory.tu_share_factory import TuShareFactory
 from util.date_util import TimeUtils
 
 INDEX_FIELDS=["ts_code","trade_date","open","high","low","close","pre_close","change","pct_chg","vol","amount"]
 TRADE_CAL_FIELDS= ["exchange","cal_date","is_open","pretrade_date"]
-HISTORY_START_DATE = "20150101"
+
+mapper = SixtyIndexMapper()
+
 class SixtyIndexAnalysis:
 
     def sync_history_value(self):
         for ts_code in content.TS_CODE_LIST:
-            self.init_sixty_index_average_value(ts_code, HISTORY_START_DATE, TimeUtils.get_current_date_str())
+            self.init_sixty_index_average_value(ts_code, content.HISTORY_START_DATE, TimeUtils.get_current_date_str())
+
     def sync_today_value(self):
         for ts_code in content.TS_CODE_LIST:
             self.init_sixty_index_average_value(ts_code, TimeUtils.get_current_date_str(), TimeUtils.get_current_date_str())
@@ -32,6 +36,7 @@ class SixtyIndexAnalysis:
                 "cal_date": this_loop_date,
             }, fields=TRADE_CAL_FIELDS)
             if trade_cal['is_open'][0] == 0:
+                this_loop_date = TimeUtils.get_n_days_before_or_after(this_loop_date, 1, is_before=False)
                 continue
 
             # 因为有停牌休息日，计算60日行情往前多推几天，取最近的60天即可，简单点
@@ -43,9 +48,10 @@ class SixtyIndexAnalysis:
                     "limit": 100
                 }, fields=INDEX_FIELDS)
             sixty_index_average_value = daily.iloc[0:60]['close'].mean()
-            now_days_value = daily.iloc[-1]
+            now_days_value = daily.iloc[0]
+            deviation_rate = now_days_value['close'] / sixty_index_average_value - 1
             # 生成数据
-            stockData = StockData(ts_code=now_days_value['ts_code'],
+            stock_data = StockData(ts_code=now_days_value['ts_code'],
                                   trade_date = now_days_value['trade_date'],
                                   close=now_days_value['close'],
                                   open=now_days_value['open'],
@@ -57,8 +63,11 @@ class SixtyIndexAnalysis:
                                   vol=now_days_value['vol'],
                                   amount=now_days_value['amount']/10,
                                   average_date = 60,
-                                  average_amount = sixty_index_average_value)
-            CommonMapper.insert_base_entity(stockData)
+                                  average_amount = sixty_index_average_value,
+                                  deviation_rate = deviation_rate,
+                                  name = content.TS_CODE_NAME_DICT[ts_code])
+            mapper.insert_index(stock_data)
+            this_loop_date = TimeUtils.get_n_days_before_or_after(this_loop_date, 1, is_before=False)
 
 
 

@@ -1,7 +1,9 @@
-import base_entity
+from entity.base_entity import BaseEntity
 
-class StockData(base_entity.BaseEntity):
-    def __init__(self, ts_code, trade_date, close, open, high, low, pre_close, change, pct_chg, vol, amount, average_date, average_amount):
+
+class StockData(BaseEntity):
+    def __init__(self, ts_code, trade_date, close, open, high, low, pre_close, change, pct_chg, vol, amount,
+                 average_date, average_amount, deviation_rate, name):
         super().__init__()
         self.ts_code = ts_code
         self.trade_date = trade_date
@@ -16,3 +18,5 @@ class StockData(base_entity.BaseEntity):
         self.amount = amount
         self.average_date = average_date
         self.average_amount = average_amount
+        self.deviation_rate = deviation_rate
+        self.name = name

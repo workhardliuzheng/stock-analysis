@@ -11,7 +11,7 @@ class DatabaseManager:
 
     def load_config(self):
         """从固定路径加载配置文件"""
-        with open(content.CONFIG_FILE, 'r') as file:
+        with open(content.CONFIG_FILE, 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
         return config['database']
 
@@ -24,7 +24,10 @@ class DatabaseManager:
                 password=self.config['password']
             )
             if self.connection.is_connected():
-                print("数据库连接成功")
+                cursor = self.connection.cursor()
+                cursor.execute("SET NAMES utf8mb4;")
+                cursor.execute("SET CHARACTER SET utf8mb4;")
+                cursor.execute("SET character_set_connection=utf8mb4;")
         except Error as e:
             print(f"Error: {e}")
 
@@ -36,12 +39,18 @@ class DatabaseManager:
     def insert(self, table, data):
         try:
             cursor = self.connection.cursor()
+
+            # 创建占位符字符串，例如 '%s, %s, %s' 对应于三个值
             placeholders = ', '.join(['%s'] * len(data))
+            # 获取列名并用逗号分隔，例如 'name, age, email'
             columns = ', '.join(data.keys())
+            # 构建 SQL 插入查询
             query = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
+
+            # 执行查询并将字典的值作为参数传递
             cursor.execute(query, tuple(data.values()))
+            # 提交事务
             self.connection.commit()
-            print("数据插入成功")
         except Error as e:
             print(f"Error: {e}")
 
@@ -84,7 +93,7 @@ class DatabaseManager:
             return
 
         # 获取第一个实体的字典以确定列名
-        sample_data = entities[0].to_dict()
+        sample_data = entities[0].to_dict_with_backticks()
         columns = ', '.join(sample_data.keys())
         placeholders = ', '.join(['%s'] * len(sample_data))
 
@@ -93,7 +102,7 @@ class DatabaseManager:
 
         try:
             cursor = self.connection.cursor()
-            values = [tuple(entity.to_dict().values()) for entity in entities]
+            values = [tuple(entity.to_dict_with_backticks().values()) for entity in entities]
             cursor.executemany(query, values)
             self.connection.commit()
             print("批量数据插入成功")
