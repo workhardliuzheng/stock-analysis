@@ -54,28 +54,23 @@ class SixtyIndexAnalysis:
                 "end_date": this_loop_end_date
             }, fields=TRADE_CAL_FIELDS)
 
-
-
-
-
-
-
-
-
-
+            # 获取一段时间的数据
+            date_ago = TimeUtils.get_n_days_before_or_after(this_loop_date, 100, is_before=True)
+            daily = pro.index_daily(**{
+                "ts_code": ts_code,
+                "start_date": date_ago,
+                "end_date": this_loop_end_date,
+                "limit": 100
+            }, fields=INDEX_FIELDS)
 
             # TODO 有问题
-            for date in trade_cal['cal_date'].values:
-                this_loop_date = date
-                # 因为有停牌休息日，计算60日行情往前多推几天，取最近的60天即可，简单点
-                date_ago = TimeUtils.get_n_days_before_or_after(this_loop_date, 100, is_before=True)
-                daily = pro.index_daily(**{
-                        "ts_code": ts_code,
-                        "start_date": date_ago,
-                        "end_date": this_loop_date,
-                        "limit": 100
-                    }, fields=INDEX_FIELDS)
-                sixty_index_average_value = daily.iloc[0:60]['close'].mean()
+            for row in trade_cal.itertuples():
+                if row.is_open == 0:
+                    continue
+                # 取出最近60天的数据
+                sixty_date = daily[daily['trade_date'] <= row.cal_date].head(60)
+
+                sixty_index_average_value = sixty_date.mean()
                 now_days_value = daily.iloc[0]
                 deviation_rate = now_days_value['close'] / sixty_index_average_value - 1
                 # 生成数据
