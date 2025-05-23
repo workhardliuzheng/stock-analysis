@@ -22,7 +22,8 @@ class SixtyIndexAnalysis:
 
     def sync_history_value(self):
         for ts_code in content.TS_CODE_LIST:
-            self.init_sixty_index_average_value(ts_code, content.HISTORY_START_DATE, TimeUtils.get_current_date_str())
+            history_start_date = content.HISTORY_START_DATE_MAP[ts_code]
+            self.init_sixty_index_average_value(ts_code, history_start_date, TimeUtils.get_current_date_str())
 
     def sync_today_value(self):
         for ts_code in content.TS_CODE_LIST:
@@ -30,10 +31,11 @@ class SixtyIndexAnalysis:
 
     def additional_data(self):
         for ts_code in content.TS_CODE_LIST:
+            history_start_date = content.HISTORY_START_DATE_MAP[ts_code]
             mapper = SixtyIndexMapper()
             max_trade_datetime = mapper.get_max_trade_time(ts_code)
             if max_trade_datetime is None:
-                max_trade_date = content.HISTORY_START_DATE
+                max_trade_date = history_start_date
             else:
                 max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
@@ -53,6 +55,7 @@ class SixtyIndexAnalysis:
                 "start_date": this_loop_date,
                 "end_date": this_loop_end_date
             }, fields=TRADE_CAL_FIELDS)
+            trade_cal = trade_cal.sort_index(ascending=False)
 
             # 获取一段时间的数据
             date_ago = TimeUtils.get_n_days_before_or_after(this_loop_date, 100, is_before=True)
@@ -60,18 +63,21 @@ class SixtyIndexAnalysis:
                 "ts_code": ts_code,
                 "start_date": date_ago,
                 "end_date": this_loop_end_date,
-                "limit": 100
+                "limit": 250
             }, fields=INDEX_FIELDS)
 
-            # TODO 有问题
+            if len(daily) < 60:
+                this_loop_date = TimeUtils.get_n_days_before_or_after(this_loop_date, 60-len(daily), False)
+                continue
+
             for row in trade_cal.itertuples():
                 if row.is_open == 0:
                     continue
                 # 取出最近60天的数据
                 sixty_date = daily[daily['trade_date'] <= row.cal_date].head(60)
 
-                sixty_index_average_value = sixty_date.mean()
-                now_days_value = daily.iloc[0]
+                sixty_index_average_value = sixty_date['close'].mean()
+                now_days_value = sixty_date.iloc[0]
                 deviation_rate = now_days_value['close'] / sixty_index_average_value - 1
                 # 生成数据
                 stock_data = StockData(ts_code=now_days_value['ts_code'],
@@ -90,7 +96,7 @@ class SixtyIndexAnalysis:
                                       deviation_rate = deviation_rate,
                                       name = content.TS_CODE_NAME_DICT[ts_code])
                 mapper.insert_index(stock_data)
-                this_loop_date = TimeUtils.get_n_days_before_or_after(this_loop_date, 1, is_before=False)
+                this_loop_date = row.cal_date
 
 
 
