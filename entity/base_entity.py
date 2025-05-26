@@ -1,6 +1,8 @@
+from abc import abstractmethod
+
+
 class BaseEntity:
-    def __init__(self):
-        self.id = None
+
     def to_dict(self):
         return {key: value for key, value in self.__dict__.items()}
 
@@ -9,3 +11,10 @@ class BaseEntity:
         if contains_id is not True:
             del data_dict['id']
         return {f'`{key}`': value for key, value in self.__dict__.items()}
+
+    def columns(self):
+        return self.__dict__.values()
+
+    @abstractmethod
+    def from_list_to_entity(self, list):
+        pass

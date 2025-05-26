@@ -1,7 +1,8 @@
 import mysql.connector
+import pandas as pd
 from mysql.connector import Error
 import yaml
-from entity import content
+from entity import constant
 
 class DatabaseManager:
     # 固定的配置文件路径
@@ -11,7 +12,7 @@ class DatabaseManager:
 
     def load_config(self):
         """从固定路径加载配置文件"""
-        with open(content.CONFIG_FILE, 'r', encoding='utf-8') as file:
+        with open(constant.CONFIG_FILE, 'r', encoding='utf-8') as file:
             config = yaml.safe_load(file)
         return config['database']
 

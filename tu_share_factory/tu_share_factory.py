@@ -2,7 +2,7 @@ import tushare
 import tushare as ts
 import yaml
 
-from entity import content
+from entity import constant
 
 
 class TuShareFactory():

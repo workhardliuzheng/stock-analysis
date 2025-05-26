@@ -17,3 +17,8 @@ HISTORY_START_DATE_MAP = {
 }
 
 CONFIG_FILE = 'config.yaml'
+
+DEFAULT_FILE_PATH = 'D:\学习材料\python股票\\'
+
+SZ_EXCHANGE = 'SZ'
+SH_EXCHANGE = 'SH'

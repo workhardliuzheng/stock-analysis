@@ -1,10 +1,11 @@
 from entity.base_entity import BaseEntity
+from util.class_util import ClassUtil
 
 
 class StockData(BaseEntity):
-    def __init__(self, ts_code, trade_date, close, open, high, low, pre_close, change, pct_chg, vol, amount,
+    def __init__(self, id, ts_code, trade_date, close, open, high, low, pre_close, change, pct_chg, vol, amount,
                  average_date, average_amount, deviation_rate, name):
-        super().__init__()
+        self.id = id
         self.ts_code = ts_code
         self.trade_date = trade_date
         self.close = close
@@ -26,3 +27,6 @@ class StockData(BaseEntity):
 
     def get_ts_code(self):
         return self.ts_code
+
+    def set_id(self, id):
+        self.id = id

@@ -1,7 +1,7 @@
 import tushare as ts
 import yaml
 
-from entity import content
+from entity import constant
 from entity.stock_data import StockData
 from mysql_connect.common_mapper import CommonMapper
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
@@ -21,17 +21,17 @@ mapper = SixtyIndexMapper()
 class SixtyIndexAnalysis:
 
     def sync_history_value(self):
-        for ts_code in content.TS_CODE_LIST:
-            history_start_date = content.HISTORY_START_DATE_MAP[ts_code]
+        for ts_code in constant.TS_CODE_LIST:
+            history_start_date = constant.HISTORY_START_DATE_MAP[ts_code]
             self.init_sixty_index_average_value(ts_code, history_start_date, TimeUtils.get_current_date_str())
 
     def sync_today_value(self):
-        for ts_code in content.TS_CODE_LIST:
+        for ts_code in constant.TS_CODE_LIST:
             self.init_sixty_index_average_value(ts_code, TimeUtils.get_current_date_str(), TimeUtils.get_current_date_str())
 
     def additional_data(self):
-        for ts_code in content.TS_CODE_LIST:
-            history_start_date = content.HISTORY_START_DATE_MAP[ts_code]
+        for ts_code in constant.TS_CODE_LIST:
+            history_start_date = constant.HISTORY_START_DATE_MAP[ts_code]
             mapper = SixtyIndexMapper()
             max_trade_datetime = mapper.get_max_trade_time(ts_code)
             if max_trade_datetime is None:
@@ -80,7 +80,8 @@ class SixtyIndexAnalysis:
                 now_days_value = sixty_date.iloc[0]
                 deviation_rate = now_days_value['close'] / sixty_index_average_value - 1
                 # 生成数据
-                stock_data = StockData(ts_code=now_days_value['ts_code'],
+                stock_data = StockData(id=None,
+                                      ts_code=now_days_value['ts_code'],
                                       trade_date = now_days_value['trade_date'],
                                       close=now_days_value['close'],
                                       open=now_days_value['open'],
@@ -94,7 +95,7 @@ class SixtyIndexAnalysis:
                                       average_date = 60,
                                       average_amount = sixty_index_average_value,
                                       deviation_rate = deviation_rate,
-                                      name = content.TS_CODE_NAME_DICT[ts_code])
+                                      name = constant.TS_CODE_NAME_DICT[ts_code])
                 mapper.insert_index(stock_data)
                 this_loop_date = row.cal_date
 

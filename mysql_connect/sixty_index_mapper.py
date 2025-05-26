@@ -1,4 +1,4 @@
-
+from entity import constant
 from mysql_connect.common_mapper import CommonMapper
 
 
@@ -17,7 +17,7 @@ class SixtyIndexMapper(CommonMapper):
             self.insert_base_entity(sixty_index)
 
 
-    # 根据指数编码和时间获取书籍
+    # 根据指数编码和时间获取数据
     def select_sixty_index_by_trade_date(self, ts_code, trade_date):
         condition = f'ts_code = \'{ts_code}\' and trade_date = \'{trade_date}\''
         sixty_index = self.select_base_entity(columns='*', condition=condition)
@@ -29,3 +29,9 @@ class SixtyIndexMapper(CommonMapper):
         # 执行查询
         sixty_index = self.select_base_entity(columns='MAX(trade_date)', condition=query)
         return sixty_index[0][0]
+
+    def select_by_code_and_trade_round(self, ts_code, start_date, end_date):
+
+        condition = f'ts_code = \'{ts_code}\' and trade_date >= \'{start_date}\' and trade_date <= \'{end_date}\''
+        sixty_index = self.select_base_entity(columns='*', condition=condition)
+        return sixty_index
