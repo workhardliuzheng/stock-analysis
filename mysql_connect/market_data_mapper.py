@@ -1,4 +1,5 @@
 from mysql_connect.common_mapper import CommonMapper
+from util.date_util import TimeUtils
 
 
 class MarketDataMapper(CommonMapper):
@@ -11,7 +12,7 @@ class MarketDataMapper(CommonMapper):
         ts_code = market_data.get_ts_code()
         value = self.select_by_trade_date(ts_code, trade_date)
         if value is not None and value:
-            print('编码为' + ts_code + '交易时间为' + trade_date + '存在重复数据')
+            print('编码为' + ts_code + '交易时间为' + TimeUtils.date_to_str(trade_date) + '存在重复数据')
         else:
             self.insert_base_entity(market_data)
 

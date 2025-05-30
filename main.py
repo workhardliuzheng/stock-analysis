@@ -1,6 +1,7 @@
 # 这是一个示例 Python 脚本。
-from plot.plot_manager import *
 from entity import constant
+from sync.index.sixty_index_analysis import SixtyIndexAnalysis
+from sync.market_data import market_data_sync
 from sync.market_data.market_data_sync import additional_data
 
 # 按 ⌃R 执行或将其替换为您的代码。
@@ -9,4 +10,5 @@ from sync.market_data.market_data_sync import additional_data
 
 # 示例使用
 if __name__ == "__main__":
-    additional_data()
+    analysis = SixtyIndexAnalysis()
+    analysis.additional_data()

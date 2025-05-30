@@ -81,21 +81,21 @@ class SixtyIndexAnalysis:
                 deviation_rate = now_days_value['close'] / sixty_index_average_value - 1
                 # 生成数据
                 stock_data = StockData(id=None,
-                                      ts_code=now_days_value['ts_code'],
-                                      trade_date = now_days_value['trade_date'],
-                                      close=now_days_value['close'],
-                                      open=now_days_value['open'],
-                                      high=now_days_value['high'],
-                                      low=now_days_value['low'],
-                                      pre_close=now_days_value['pre_close'],
-                                      change=now_days_value['change'],
-                                      pct_chg=now_days_value['pct_chg'],
-                                      vol=now_days_value['vol'],
-                                      amount=now_days_value['amount']/10,
-                                      average_date = 60,
-                                      average_amount = sixty_index_average_value,
-                                      deviation_rate = deviation_rate,
-                                      name = constant.TS_CODE_NAME_DICT[ts_code])
+                                       ts_code=now_days_value['ts_code'],
+                                       trade_date=now_days_value['trade_date'],
+                                       close=float(now_days_value['close']),
+                                       open=float(now_days_value['open']),
+                                       high=float(now_days_value['high']),
+                                       low=float(now_days_value['low']),
+                                       pre_close=float(now_days_value['pre_close']),
+                                       change=float(now_days_value['change']),
+                                       pct_chg=float(now_days_value['pct_chg']),
+                                       vol=float(now_days_value['vol']),
+                                       amount=float(now_days_value['amount'] / 10),
+                                       average_date=60,
+                                       average_amount=float(sixty_index_average_value),
+                                       deviation_rate=float(deviation_rate),
+                                       name=constant.TS_CODE_NAME_DICT[ts_code])
                 mapper.insert_index(stock_data)
                 this_loop_date = row.cal_date
 
