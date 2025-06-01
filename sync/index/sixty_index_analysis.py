@@ -41,6 +41,56 @@ class SixtyIndexAnalysis:
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
             self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
 
+    def analyze_future_trend(self, future_days=[5, 10, 20]):
+
+        results = {}
+
+        for days in future_days:
+            print(f"\n=== {days}日后走势分析 ===")
+
+            # 计算未来收益率
+            future_returns = []
+            deviation_ranges = []
+
+            for ts_code in self.data['ts_code'].unique():
+                stock_data = self.data[self.data['ts_code'] == ts_code].copy()
+                stock_data = stock_data.sort_values('trade_date').reset_index(drop=True)
+
+                for i in range(len(stock_data) - days):
+                    current_price = stock_data.iloc[i]['close']
+                    future_price = stock_data.iloc[i + days]['close']
+                    current_deviation = stock_data.iloc[i]['deviation_rate']
+
+                    if pd.notna(current_deviation) and pd.notna(future_price):
+                        future_return = (future_price - current_price) / current_price * 100
+                        future_returns.append(future_return)
+                        deviation_ranges.append(current_deviation)
+
+            # 创建分析数据框
+            analysis_df = pd.DataFrame({
+                'deviation_rate': deviation_ranges,
+                'future_return': future_returns
+            })
+
+            # 按偏离率分组分析
+            bins = [-float('inf'), -10, -5, -2, 0, 2, 5, 10, float('inf')]
+            labels = ['<-10%', '-10%~-5%', '-5%~-2%', '-2%~0%', '0%~2%', '2%~5%', '5%~10%', '>10%']
+
+            analysis_df['deviation_range'] = pd.cut(analysis_df['deviation_rate'], bins=bins, labels=labels)
+
+            # 统计各区间的未来收益
+            range_analysis = analysis_df.groupby('deviation_range')['future_return'].agg([
+                'count', 'mean', 'std', 'min', 'max',
+                lambda x: (x > 0).sum() / len(x) * 100  # 上涨概率
+            ]).round(4)
+            range_analysis.columns = ['样本数', '平均收益率%', '收益率标准差', '最小收益率%', '最大收益率%',
+                                      '上涨概率%']
+
+            print(range_analysis)
+            results[f'{days}days'] = range_analysis
+
+        return results
+
     def init_sixty_index_average_value(self, ts_code, start_date, end_date):
         pro = TuShareFactory.build_api_client()
 
@@ -94,7 +144,7 @@ class SixtyIndexAnalysis:
                                        amount=float(now_days_value['amount'] / 10),
                                        average_date=60,
                                        average_amount=float(sixty_index_average_value),
-                                       deviation_rate=float(deviation_rate),
+                                       deviation_rate=float(deviation_rate * 100),
                                        name=constant.TS_CODE_NAME_DICT[ts_code])
                 mapper.insert_index(stock_data)
                 this_loop_date = row.cal_date
