@@ -1,3 +1,4 @@
+import numpy as np
 from PIL.ImageChops import offset
 
 from entity import constant
@@ -40,17 +41,17 @@ def sync_market_date(start_date, end_date):
                                      ts_code=data.ts_code,
                                      trade_date=TimeUtils.str_to_date(data.trade_date),
                                      ts_name=data.ts_name,
-                                     total_mv=data.total_mv,
-                                     vol=data.vol,
-                                     trans_count=data.trans_count,
-                                     pe=data.pe,
-                                     tr=data.tr,
+                                     total_mv= None if np.isnan(data.total_mv) else data.total_mv,
+                                     vol=None if np.isnan(data.vol) else data.vol,
+                                     trans_count=None if np.isnan(data.trans_count) else data.trans_count,
+                                     pe=None if np.isnan(data.pe) else data.pe,
+                                     tr=None if np.isnan(data.tr) else data.tr,
                                      exchange=data.exchange,
-                                     amount=data.amount,
-                                     float_mv=data.float_mv,
-                                     float_share=data.float_share,
-                                     total_share=data.total_share,
-                                     com_count=data.com_count,
+                                     amount=None if np.isnan(data.amount) else data.amount,
+                                     float_mv=None if np.isnan(data.float_mv) else data.float_mv,
+                                     float_share=None if np.isnan(data.float_share) else data.float_share,
+                                     total_share=None if np.isnan(data.total_share) else data.total_share,
+                                     com_count=None if np.isnan(data.com_count) else data.com_count,
                                      )
             mapper.insert_market_data(market_data)
         index = index + 1

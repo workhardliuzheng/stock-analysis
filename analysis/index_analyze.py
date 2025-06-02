@@ -194,7 +194,7 @@ class StockAnalyzer:
         sample_data = sample_data.sort_values('trade_date')
 
         axes[0, 0].plot(sample_data['trade_date'], sample_data['close'], label='收盘价', linewidth=1)
-        axes[0, 0].plot(sample_data['trade_date'], sample_data['ma60'], label='60日均线', linewidth=2)
+        axes[0, 0].plot(sample_data['trade_date'], sample_data['average_amount'], label='60日均线', linewidth=2)
         axes[0, 0].set_title('价格走势与60日均线')
         axes[0, 0].legend()
         axes[0, 0].tick_params(axis='x', rotation=45)

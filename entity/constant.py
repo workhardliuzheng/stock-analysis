@@ -22,3 +22,17 @@ DEFAULT_FILE_PATH = 'D:\学习材料\python股票\\'
 
 SZ_EXCHANGE = 'SZ'
 SH_EXCHANGE = 'SH'
+
+FUND_NAME_MAP={
+    '510300.SH':'沪深300ETF',
+    '159915.SZ':'创业板',
+    '159903.SZ':'深成ETF',
+    '588080.SH':'科创50',
+    '159920.SZ':'恒生ETF',
+    '513100.SH':'纳指ETF',
+    '513500.SH':'标普500ETF',
+    '513030.SH':'德国ETF',
+    '512100.SH':'中证1000ETF',
+    '513080.SH':'法国CAC40ETF',
+    '513730.SH':'东南亚科技ETF'
+}
