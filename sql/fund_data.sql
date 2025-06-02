@@ -1,0 +1,20 @@
+CREATE TABLE `fund_data` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY COMMENT '自增主键',
+    `ts_code` VARCHAR(255) DEFAULT NULL COMMENT 'TS代码',
+    `trade_date` DATE DEFAULT NULL COMMENT '交易日期',
+    `name` VARCHAR(255) DEFAULT NULL COMMENT '基金名称',
+    `pre_close` FLOAT(20, 4) DEFAULT NULL COMMENT '昨收盘价(元)',
+    `open` FLOAT(20, 4) DEFAULT NULL COMMENT '开盘价(元)',
+    `high` FLOAT(20, 4) DEFAULT NULL COMMENT '最高价(元)',
+    `low` FLOAT(20, 4) DEFAULT NULL COMMENT '最低价(元)',
+    `close` FLOAT(20, 4) DEFAULT NULL COMMENT '收盘价(元)',
+    `change` FLOAT(20, 4) DEFAULT NULL COMMENT '涨跌(元)',
+    `pct_chg` FLOAT(20, 4) DEFAULT NULL COMMENT '涨跌幅(%)',
+    `vol` FLOAT(20, 4) DEFAULT NULL COMMENT '成交量(手)',
+    `amount` FLOAT(20, 4) DEFAULT NULL COMMENT '成交金额(千元)',
+    `m5` FLOAT(20, 4) DEFAULT NULL COMMENT '5日线',
+    `m10` FLOAT(20, 4) DEFAULT NULL COMMENT '10日线',
+    `m20` FLOAT(20, 4) DEFAULT NULL COMMENT '30日线',
+    `m60` FLOAT(20, 4) DEFAULT NULL COMMENT '60日线',
+    `m120` FLOAT(20, 4) DEFAULT NULL COMMENT '120日线'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='基金数据表';
