@@ -18,4 +18,7 @@ if __name__ == "__main__":
     #market_data_sync.additional_data()
     #analysis = StockAnalyzer('399001.SZ')
     #analysis.all_analysis()
-    fund_data_sync.additional_data()
+    fund_map = constant.FUND_NAME_MAP
+    for ts_code in fund_map.keys():
+        fund_data_sync.cal_average(ts_code)
+

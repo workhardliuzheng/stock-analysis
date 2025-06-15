@@ -1,10 +1,13 @@
 import numpy as np
+import pandas as pd
 
+from analysis.calculate_junxian import cal_cal_average_amount
 from entity import constant
 from entity.fund_data import FundData
 from mysql_connect.fund_data_mapper import FundDataMapper
 from mysql_connect.fund_mapper import FundMapper
 from tu_share_factory.tu_share_factory import TuShareFactory
+from util.class_util import ClassUtil
 from util.date_util import TimeUtils
 
 FUND_DATA_FIELDS = [
@@ -39,6 +42,26 @@ def additional_data():
             end_date = TimeUtils.get_current_date_str()
 
         sync_fund_data(ts_code, start_date, end_date, fund_map[ts_code])
+        cal_average(ts_code)
+
+def cal_average(ts_code):
+    data = fund_data_mapper.select_by_ts_code(ts_code)
+    data_frame_list = []
+    for row in data:
+        stock_data = ClassUtil.create_entities_from_data(FundData, row)
+        data_frame_list.append(stock_data.to_dict())
+
+    ds = pd.DataFrame(data_frame_list)
+    averages = cal_cal_average_amount(ds, [5,10,20,60,120])
+    for row in averages.itertuples():
+        fund_data = FundData(id=row.id,
+                             m5=row.m5,
+                             m10=row.m10,
+                             m20=row.m20,
+                             m60=row.m60,
+                             m120=row.m120
+                             )
+        fund_data_mapper.update_by_id(fund_data, ['m5','m10','m20','m60','m120'])
 
 def sync_fund_data(ts_code, start_date, end_date, name):
     pro = TuShareFactory.build_api_client()

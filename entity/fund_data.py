@@ -33,3 +33,26 @@ class FundData(BaseEntity):
 
     def set_id(self, id):
         self.id = id
+
+    @staticmethod
+    def df_to_entity(row):
+        entity = FundData(
+            id=row['id'],
+            ts_code=row['ts_code'],
+            trade_date=row['trade_date'],
+            name=row['name'],
+            pre_close=row['pre_close'],
+            open_price=row['open'],
+            high=row['high'],
+            low=row['low'],
+            close=row['close'],
+            change=row['change'],
+            pct_chg=row['pct_chg'],
+            vol=row['vol'],
+            amount=row['amount'],
+            m5=row['m5'],
+            m10=row['m10'],
+            m20=row['m20'],
+            m60=row['m60'],
+            m120=row['m120'])
+        return entity
