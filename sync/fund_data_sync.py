@@ -52,6 +52,8 @@ def cal_average(ts_code):
         data_frame_list.append(stock_data.to_dict())
 
     ds = pd.DataFrame(data_frame_list)
+    ds = ds.sort_values(by='trade_date')
+
     averages = cal_cal_average_amount(ds, [5,10,20,60,120])
     for row in averages.itertuples():
         fund_data = FundData(id=row.id,

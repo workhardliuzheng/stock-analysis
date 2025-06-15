@@ -26,6 +26,12 @@ class FundDataMapper(CommonMapper):
         market_data = self.select_base_entity(columns='*', condition=condition)
         return market_data
 
+    def select_by_code_and_trade_round(self, ts_code, start_date, end_date):
+
+        condition = f'ts_code = \'{ts_code}\' and trade_date >= \'{start_date}\' and trade_date <= \'{end_date}\''
+        data = self.select_base_entity(columns='*', condition=condition)
+        return data
+
     def update_by_id(self, base_entity, columns):
         self.update_base_entity(base_entity, columns, ['id'])
 
