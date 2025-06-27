@@ -29,7 +29,7 @@ fund_mapper = FundMapper()
 class FundAnalyze:
     def __init__(self, ts_code):
         found_date = fund_mapper.get_found_date(ts_code)
-        min_date = fund_data_mapper.get_min_trade_time(ts_code)
+        min_date = fund_data_mapper.get_max_trade_time(ts_code)
 
         if min_date:
             start_date = TimeUtils.date_to_str(found_date)
@@ -44,8 +44,8 @@ class FundAnalyze:
         for row in fund_data:
             stock_data = ClassUtil.create_entities_from_data(FundData, row)
             data_frame_list.append(stock_data.to_dict())
-
-        self.data = pd.DataFrame(data_frame_list)
+        data = pd.DataFrame(data_frame_list)
+        self.data = data.sort_values('trade_date')
         self.ts_code=ts_code
 
     def plot_average_and_close(self):
@@ -119,3 +119,18 @@ class FundAnalyze:
             plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
                                         right_plot_metadata_list=right_plot_metadata_list)
 
+    def plot_close_and_deviation_from_m60(self):
+            data = self.data
+            # 计算收盘价与20日线的偏离度（百分比）
+            data['deviation_from_mm60_pct'] = ((data['close'] - data['m60']) / data['m60']) * 100
+
+            left_data1 = DataPltMetadata('close', '收盘价', 1, 'blue', linestyle='-')
+            left_data2 = DataPltMetadata('m20', '20日线', 1, 'red', linestyle='-')
+
+            right_data = DataPltMetadata('deviation_from_mm60_pct', 'm60偏移值', 1, 'orange', linestyle='-')
+
+            left_plot_metadata_list = [left_data1, left_data2]
+            right_plot_metadata_list = [right_data]
+
+            plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
+                                        right_plot_metadata_list=right_plot_metadata_list)

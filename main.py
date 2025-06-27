@@ -2,7 +2,7 @@
 from analysis.fund_analyze import FundAnalyze
 from analysis.index_analyze import StockAnalyzer
 from entity import constant
-from sync import fund_data_sync
+from sync import fund_data_sync as fds
 from sync.index.sixty_index_analysis import SixtyIndexAnalysis
 from sync.market_data import market_data_sync
 from sync.market_data.market_data_sync import additional_data
@@ -22,6 +22,7 @@ if __name__ == "__main__":
     #fund_map = constant.FUND_NAME_MAP
     #for ts_code in fund_map.keys():
     #    fund_data_sync.cal_average(ts_code)
-    fund_analyze = FundAnalyze('510300.SH')
-    fund_analyze.plot_close_and_deviation_from_m20()
+    fund_analyze = FundAnalyze('159920.SZ')
+    fund_analyze.plot_close_and_deviation_from_m60()
+    #fds.additional_data()
 

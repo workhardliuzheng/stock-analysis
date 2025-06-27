@@ -35,11 +35,11 @@ class FundDataMapper(CommonMapper):
     def update_by_id(self, base_entity, columns):
         self.update_base_entity(base_entity, columns, ['id'])
 
-    def get_min_trade_time(self, ts_code=''):
+    def get_max_trade_time(self, ts_code=''):
         # 构建 SQL 查询以获取最大交易时间
         query=''
         if ts_code:
             query = f" ts_code = \'{ts_code}\';"
         # 执行查询
-        market_data = self.select_base_entity(columns='MIN(trade_date)', condition=query)
+        market_data = self.select_base_entity(columns='MAX(trade_date)', condition=query)
         return market_data[0][0]

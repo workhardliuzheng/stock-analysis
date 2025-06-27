@@ -32,17 +32,49 @@ def additional_data():
     fund_map = constant.FUND_NAME_MAP
     for ts_code in fund_map.keys():
         found_date = fund_mapper.get_found_date(ts_code)
-        min_date = fund_data_mapper.get_min_trade_time(ts_code)
+        max_date = fund_data_mapper.get_max_trade_time(ts_code)
 
-        if min_date:
-            start_date = TimeUtils.date_to_str(found_date)
-            end_date = TimeUtils.date_to_str(min_date)
+        if max_date:
+            start_date = TimeUtils.date_to_str(max_date)
+            end_date = TimeUtils.get_current_date_str()
         else:
             start_date = TimeUtils.date_to_str(found_date)
             end_date = TimeUtils.get_current_date_str()
 
         sync_fund_data(ts_code, start_date, end_date, fund_map[ts_code])
         cal_average(ts_code)
+def cal_average(ts_code, start_date, end_date):
+    # 为了计算日线，往前多查200天
+    start_date = TimeUtils.get_n_days_before_or_after(start_date, 200, True)
+    data = fund_data_mapper.select_by_code_and_trade_round(ts_code, start_date, end_date)
+    data_frame_list = []
+    for row in data:
+        stock_data = ClassUtil.create_entities_from_data(FundData, row)
+        data_frame_list.append(stock_data.to_dict())
+    ds = pd.DataFrame(data_frame_list)
+    ds = ds.sort_values(by='trade_date')
+    averages = cal_cal_average_amount(ds, [5, 10, 20, 60, 120])
+
+    for row in averages.itertuples():
+        fund_data = FundData(id=row.id,
+                             m5=row.m5,
+                             m10=row.m10,
+                             m20=row.m20,
+                             m60=row.m60,
+                             m120=row.m120
+                             )
+        if fund_data.m5 is not None:
+            fund_data_mapper.update_by_id(fund_data, ['m5'])
+        if fund_data.m10 is not None:
+            fund_data_mapper.update_by_id(fund_data, ['m10'])
+        if fund_data.m20 is not None:
+            fund_data_mapper.update_by_id(fund_data, ['m20'])
+        if fund_data.m60 is not None:
+            fund_data_mapper.update_by_id(fund_data, ['m60'])
+        if fund_data.m120 is not None:
+            fund_data_mapper.update_by_id(fund_data, ['m120'])
+
+
 
 def cal_average(ts_code):
     data = fund_data_mapper.select_by_ts_code(ts_code)
