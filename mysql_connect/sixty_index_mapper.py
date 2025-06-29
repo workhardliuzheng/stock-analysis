@@ -35,3 +35,6 @@ class SixtyIndexMapper(CommonMapper):
         condition = f'ts_code = \'{ts_code}\' and trade_date >= \'{start_date}\' and trade_date <= \'{end_date}\''
         sixty_index = self.select_base_entity(columns='*', condition=condition)
         return sixty_index
+
+    def update_by_ts_code_and_trade_date(self, base_entity, columns):
+        self.update_base_entity(base_entity, columns, ['ts_code', 'trade_date'])

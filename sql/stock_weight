@@ -1,0 +1,7 @@
+CREATE TABLE stock_weight (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    index_code VARCHAR(255) DEFAULT NULL COMMENT '指数代码',
+    con_code VARCHAR(255) DEFAULT NULL COMMENT '成分代码',
+    trade_date VARCHAR(255) DEFAULT NULL COMMENT '交易日期',
+    weight FLOAT DEFAULT NULL COMMENT '权重'
+) DEFAULT CHARSET=utf8mb4 COMMENT='指数成分代码';
