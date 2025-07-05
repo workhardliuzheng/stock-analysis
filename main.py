@@ -16,7 +16,8 @@ from sync.index.sync_stock_weight import additional_data as sync_stock_weight
 if __name__ == "__main__":
     sync_stock_weight()
 
-    #six = SixtyIndexAnalysis()
+    six = SixtyIndexAnalysis()
+    six.additional_data()
     #res = six.get_index_pe_pb('000300.SH', '20250101', '20250228')
 
     #print(res)

@@ -131,10 +131,10 @@ class DatabaseManager:
 
         # 构建 SQL
         placeholders = ', '.join(['%s'] * len(columns))
-        columns_str = ', '.join([f'`{col}`' for col in columns])
+        columns_str = ', '.join([f'{col}' for col in columns])
 
         # ON DUPLICATE KEY UPDATE 部分
-        update_clause = ', '.join([f'`{col}` = VALUES(`{col}`)' for col in columns if col != 'id'])
+        update_clause = ', '.join([f'{col} = VALUES({col})' for col in columns if col != 'id'])
 
         sql = f"""
             INSERT INTO `{table}` ({columns_str})

@@ -11,8 +11,6 @@ mapper = StockWeightMapper()
 
 def additional_data():
     for ts_code in constant.TS_CODE_LIST:
-        if (ts_code == '000001.SH'):
-            continue
 
         history_start_date = constant.HISTORY_START_DATE_MAP[ts_code]
         max_trade_datetime = mapper.get_max_trade_time(ts_code)
