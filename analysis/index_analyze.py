@@ -1,13 +1,19 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from datetime import datetime, timedelta
+import warnings
+warnings.filterwarnings('ignore')
 
 from entity import constant
 from entity.stock_data import StockData
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from plot.plot_dual_y_axis_line_chart import plot_dual_y_axis_line_chart
-import matplotlib.pyplot as plt
 
 from util.class_util import ClassUtil
 from util.date_util import TimeUtils
+
 
 # 设置中文字体
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Arial Unicode MS', 'DejaVu Sans']
@@ -293,3 +299,201 @@ class StockAnalyzer:
         if reversal_points is not None and len(reversal_points) > 0:
             avg_days = reversal_points['days_to_stable'].mean()
             print(f"3. 极端偏离后平均 {avg_days:.1f} 天回归稳定区间")
+    def calculate_percentiles(self, ts_code, target_date=None, lookback_years=None):
+        """
+        计算指定日期的PE/PB/PE_TTM历史百分位
+
+        Args:
+            ts_code: 指数代码
+            target_date: 目标日期，默认为最新日期
+            lookback_years: 回看年数，默认为全部历史
+
+        Returns:
+            dict: 包含百分位信息的字典
+        """
+        # 获取数据
+        if lookback_years:
+            start_date = (datetime.now() - timedelta(days=lookback_years * 365)).strftime('%Y-%m-%d')
+            df = self.get_index_data(ts_code, start_date=start_date)
+        else:
+            df = self.get_index_data(ts_code)
+
+        if df.empty:
+            print(f"未找到指数 {ts_code} 的数据")
+            return {}
+
+        # 确定目标日期
+        if target_date is None:
+            target_date = df['trade_date'].max()
+        else:
+            target_date = pd.to_datetime(target_date)
+
+        # 获取目标日期的数据
+        target_data = df[df['trade_date'] == target_date]
+        if target_data.empty:
+            print(f"未找到日期 {target_date} 的数据")
+            return {}
+
+        target_row = target_data.iloc[0]
+
+        # 计算历史百分位
+        result = {
+            'ts_code': ts_code,
+            'target_date': target_date,
+            'data_start_date': df['trade_date'].min(),
+            'data_end_date': df['trade_date'].max(),
+            'total_days': len(df),
+            'lookback_years': lookback_years
+        }
+
+        # 计算各指标的百分位
+        metrics = ['pe', 'pb', 'pe_ttm', 'pe_weight', 'pe_ttm_weight', 'pb_weight']
+
+        for metric in metrics:
+            if pd.notna(target_row[metric]):
+                # 过滤掉空值
+                valid_data = df[df[metric].notna()][metric]
+
+                if len(valid_data) > 0:
+                    # 计算百分位
+                    percentile = (valid_data < target_row[metric]).sum() / len(valid_data) * 100
+
+                    result[f'{metric}_current'] = target_row[metric]
+                    result[f'{metric}_percentile'] = round(percentile, 2)
+                    result[f'{metric}_min'] = valid_data.min()
+                    result[f'{metric}_max'] = valid_data.max()
+                    result[f'{metric}_mean'] = valid_data.mean()
+                    result[f'{metric}_median'] = valid_data.median()
+                    result[f'{metric}_valid_days'] = len(valid_data)
+                else:
+                    result[f'{metric}_current'] = target_row[metric]
+                    result[f'{metric}_percentile'] = None
+            else:
+                result[f'{metric}_current'] = None
+                result[f'{metric}_percentile'] = None
+
+        return result
+
+    def analyze_percentile_trend(self, ts_code, days=252):
+        """
+        分析最近一段时间的百分位变化趋势
+
+        Args:
+            ts_code: 指数代码
+            days: 分析天数，默认252天（一年）
+
+        Returns:
+            pd.DataFrame: 包含每日百分位的数据
+        """
+        # 获取数据
+        df = self.get_index_data(ts_code)
+
+        if df.empty or len(df) < days:
+            print(f"数据不足，需要至少 {days} 天的数据")
+            return pd.DataFrame()
+
+        # 取最近的数据
+        recent_df = df.tail(days).copy()
+
+        metrics = ['pe', 'pb', 'pe_ttm', 'pe_weight', 'pe_ttm_weight', 'pb_weight']
+
+        # 计算每日的历史百分位
+        for metric in metrics:
+            percentiles = []
+
+            for i, row in recent_df.iterrows():
+                # 获取当前日期之前的所有数据
+                historical_data = df[df['trade_date'] <= row['trade_date']][metric].dropna()
+
+                if len(historical_data) > 0 and pd.notna(row[metric]):
+                    percentile = (historical_data < row[metric]).sum() / len(historical_data) * 100
+                    percentiles.append(percentile)
+                else:
+                    percentiles.append(None)
+
+            recent_df[f'{metric}_percentile'] = percentiles
+
+        return recent_df
+
+    def print_percentile_report(self, ts_code, target_date=None, lookback_years=None):
+        """
+        打印百分位分析报告
+
+        Args:
+            ts_code: 指数代码
+            target_date: 目标日期
+            lookback_years: 回看年数
+        """
+        result = self.calculate_percentiles(ts_code, target_date, lookback_years)
+
+        if not result:
+            return
+
+        print("=" * 60)
+        print(f"指数百分位分析报告")
+        print("=" * 60)
+        print(f"指数代码: {result['ts_code']}")
+        print(f"分析日期: {result['target_date'].strftime('%Y-%m-%d')}")
+        print(
+            f"数据范围: {result['data_start_date'].strftime('%Y-%m-%d')} 至 {result['data_end_date'].strftime('%Y-%m-%d')}")
+        print(f"总数据天数: {result['total_days']} 天")
+        if lookback_years:
+            print(f"回看年数: {lookback_years} 年")
+        print("-" * 60)
+
+        # 等权指标
+        print("等权指标 (基于市值权重):")
+        for metric in ['pe', 'pb', 'pe_ttm']:
+            if result.get(f'{metric}_percentile') is not None:
+                current = result[f'{metric}_current']
+                percentile = result[f'{metric}_percentile']
+                min_val = result[f'{metric}_min']
+                max_val = result[f'{metric}_max']
+                median = result[f'{metric}_median']
+
+                print(f"  {metric.upper():8}: {current:8.2f} (百分位: {percentile:6.2f}%) "
+                      f"[区间: {min_val:.2f} - {max_val:.2f}, 中位数: {median:.2f}]")
+            else:
+                print(f"  {metric.upper():8}: 无数据")
+
+        print()
+
+        # 加权指标
+        print("加权指标 (基于指数权重):")
+        for metric in ['pe_weight', 'pb_weight', 'pe_ttm_weight']:
+            if result.get(f'{metric}_percentile') is not None:
+                current = result[f'{metric}_current']
+                percentile = result[f'{metric}_percentile']
+                min_val = result[f'{metric}_min']
+                max_val = result[f'{metric}_max']
+                median = result[f'{metric}_median']
+
+                display_name = metric.replace('_weight', '').upper() + '_W'
+                print(f"  {display_name:8}: {current:8.2f} (百分位: {percentile:6.2f}%) "
+                      f"[区间: {min_val:.2f} - {max_val:.2f}, 中位数: {median:.2f}]")
+            else:
+                display_name = metric.replace('_weight', '').upper() + '_W'
+                print(f"  {display_name:8}: 无数据")
+
+        print("=" * 60)
+
+        # 估值水平判断
+        print("估值水平判断:")
+        for metric in ['pe', 'pb', 'pe_ttm', 'pe_weight', 'pb_weight', 'pe_ttm_weight']:
+            percentile = result.get(f'{metric}_percentile')
+            if percentile is not None:
+                if percentile <= 10:
+                    level = "极低估值"
+                elif percentile <= 25:
+                    level = "低估值"
+                elif percentile <= 75:
+                    level = "合理估值"
+                elif percentile <= 90:
+                    level = "高估值"
+                else:
+                    level = "极高估值"
+
+                display_name = metric.replace('_weight', '_W').upper()
+                print(f"  {display_name}: {level} ({percentile:.1f}%)")
+
+        print("=" * 60)

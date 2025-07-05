@@ -13,6 +13,18 @@ class CommonMapper:
         database_manager.insert(self.table_name, base_entity.to_dict_with_backticks(contains_id=False))
         database_manager.disconnect()
 
+    def batch_insert_base_entity(self, base_entity_list):
+        database_manager = DatabaseManager()
+        database_manager.connect()
+        database_manager.batch_insert(self.table_name, base_entity_list)
+        database_manager.disconnect()
+
+    def upsert_base_entities_batch(self, base_entity_list):
+        database_manager = DatabaseManager()
+        database_manager.connect()
+        database_manager.upsert_base_entities_batch(self.table_name, base_entity_list)
+        database_manager.disconnect()
+
     def select_base_entity(self, columns, condition):
         database_manager = DatabaseManager()
         database_manager.connect()

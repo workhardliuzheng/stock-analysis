@@ -22,4 +22,4 @@ CREATE TABLE `ts_stock_data` (
   `pb` float(255,4) DEFAULT NULL COMMENT 'pb等权值',
   `pe_ttm` float(255,4) DEFAULT NULL COMMENT 'pe_ttm等权值',
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=14064 DEFAULT CHARSET=utf8mb4
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4

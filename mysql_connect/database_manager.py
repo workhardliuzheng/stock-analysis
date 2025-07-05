@@ -110,3 +110,57 @@ class DatabaseManager:
         except Error as e:
             print(f"Error: {e}")
 
+    def upsert_base_entities_batch(self, table, entities):
+        """
+        MySQL 批量 UPSERT 实现
+
+        Args:
+            entities: list of entity objects
+        Returns:
+            int: 实际插入的新记录数量
+        """
+        if not entities:
+            return 0
+
+        # 假设第一个实体来获取表名和字段信息
+        first_entity = entities[0]
+
+        # 获取字段信息
+        sample_dict = first_entity.to_dict_with_backticks(contains_id= True)
+        columns = list(sample_dict.keys())
+
+        # 构建 SQL
+        placeholders = ', '.join(['%s'] * len(columns))
+        columns_str = ', '.join([f'`{col}`' for col in columns])
+
+        # ON DUPLICATE KEY UPDATE 部分
+        update_clause = ', '.join([f'`{col}` = VALUES(`{col}`)' for col in columns if col != 'id'])
+
+        sql = f"""
+            INSERT INTO `{table}` ({columns_str})
+            VALUES ({placeholders})
+            ON DUPLICATE KEY UPDATE {update_clause}
+        """
+
+        # 准备批量数据
+        batch_data = []
+        for entity in entities:
+            entity_dict = entity.to_dict_with_backticks(contains_id= True)
+            row_data = [entity_dict.get(col) for col in columns]
+            batch_data.append(row_data)
+
+        try:
+            cursor = self.connection.cursor()
+            cursor.executemany(sql, batch_data)
+
+            # MySQL 中 affected_rows 返回插入+更新的行数
+            # 如果需要区分插入和更新，可以通过 ROW_COUNT() 和其他方式
+            affected_rows = cursor.rowcount
+            self.connection.commit()  # 提交事务
+
+            return affected_rows
+
+        except Exception as e:
+            self.rollback()  # 回滚事务
+            print(f"批量 UPSERT 失败: {e}")
+            raise e
