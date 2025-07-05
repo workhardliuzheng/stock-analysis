@@ -11,10 +11,10 @@ from entity.stock_weight import StockWeight
 from mysql_connect.common_mapper import CommonMapper
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from mysql_connect.stock_weight_mapper import StockWeightMapper
+from sync.index.sync_stock_weight import additional_data
 from tu_share_factory.tu_share_factory import TuShareFactory
 from util.class_util import ClassUtil
 from util.date_util import TimeUtils
-from sync_stock_weight import additional_data as sync_weight
 
 INDEX_FIELDS=["ts_code","trade_date","open","high","low","close","pre_close","change","pct_chg","vol","amount"]
 TRADE_CAL_FIELDS= [
@@ -43,7 +43,7 @@ class SixtyIndexAnalysis:
     # 自动同步数据
     def additional_data(self):
         # 同步权重
-        sync_weight()
+        additional_data()
         # 同步指数价值
         for ts_code in constant.TS_CODE_LIST:
             history_start_date = constant.HISTORY_START_DATE_MAP[ts_code]
@@ -55,7 +55,7 @@ class SixtyIndexAnalysis:
                 max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
             self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
-            self.additional_pe_data_and_update_mapper(ts_code, start_date, TimeUtils.get_current_date_str())
+            self.additional_pe_data_and_update_mapper(ts_code, constant.HISTORY_START_DATE_MAP[ts_code], TimeUtils.get_current_date_str())
 
 
 
