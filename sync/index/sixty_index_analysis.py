@@ -168,7 +168,8 @@ class SixtyIndexAnalysis:
         print(f"找到 {len(stock_analysis['consistent_stocks'])} 只在整个期间都存在的股票")
 
         # 3. 获取财务数据
-        financial_data = self._get_financial_data(pro, stock_analysis['consistent_stocks'], start_date, end_date)
+        financial_data = self._get_financial_data_adaptive(pro, stock_analysis['consistent_stocks'], start_date,
+                                                           end_date)
 
         if not financial_data:
             print("未获取到财务数据")
@@ -272,22 +273,46 @@ class SixtyIndexAnalysis:
             'stock_monthly_presence': stock_monthly_presence
         }
 
-    def _get_financial_data(self, pro, stock_codes, start_date, end_date):
-        """获取财务数据"""
+    def _get_financial_data(self, pro, stock_codes, start_date, end_date, segment_days=7):
+        """
+        分段获取财务数据
+
+        Args:
+            pro: TuShare API客户端
+            stock_codes: 股票代码列表
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
+            segment_days: 每段获取的天数，默认7天
+
+        Returns:
+            dict: 按日期组织的财务数据
+        """
         financial_data = {}
 
-        print(f"开始获取 {len(stock_codes)} 只股票的财务数据...")
+        print(f"开始分段获取 {len(stock_codes)} 只股票的财务数据...")
+        print(f"时间范围: {start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')}")
+        print(f"分段策略: 每 {segment_days} 天获取一次")
 
-        date_range = pd.date_range(start=start_date, end=end_date)
-        total_days = len(date_range)
+        current_date = start_date
+        segment_count = 0
+        total_segments = ((end_date - start_date).days // segment_days) + 1
 
-        for i, date in enumerate(date_range):
-            date_str = date.strftime('%Y%m%d')
+        while current_date <= end_date:
+            segment_count += 1
+            segment_end = min(current_date + timedelta(days=segment_days - 1), end_date)
+
+            current_date_str = current_date.strftime('%Y%m%d')
+            segment_end_str = segment_end.strftime('%Y%m%d')
 
             try:
-                time.sleep(0.3)  # 控制API调用频率
+                print(f"获取第 {segment_count}/{total_segments} 段数据: {current_date_str} - {segment_end_str}")
+
+                # 控制API调用频率
+                time.sleep(0.3)
+
                 df = pro.daily_basic(
-                    trade_date=date_str,
+                    start_date=current_date_str,
+                    end_date=segment_end_str,
                     fields='trade_date,ts_code,pe,pe_ttm,pb,total_mv,circ_mv'
                 )
 
@@ -300,17 +325,111 @@ class SixtyIndexAnalysis:
                         df_valid = df_filtered.dropna(subset=['total_mv', 'circ_mv'])
 
                         if not df_valid.empty:
-                            financial_data[date_str] = df_valid.to_dict('records')
+                            # 按日期分组存储
+                            for trade_date, group in df_valid.groupby('trade_date'):
+                                financial_data[trade_date] = group.to_dict('records')
 
-                if (i + 1) % 10 == 0:
-                    print(f"  已获取 {i + 1}/{total_days} 天的数据")
+                            print(
+                                f"  第 {segment_count} 段获取到 {len(df_valid)} 条有效数据，覆盖 {len(df_valid.groupby('trade_date'))} 个交易日")
+                        else:
+                            print(f"  第 {segment_count} 段无有效数据")
+                    else:
+                        print(f"  第 {segment_count} 段无目标股票数据")
+                else:
+                    print(f"  第 {segment_count} 段无数据返回")
 
             except Exception as e:
-                print(f"获取 {date_str} 财务数据失败: {e}")
-                continue
+                print(f"获取第 {segment_count} 段数据失败: {e}")
+                # 如果API调用失败，尝试降级为单日获取
+                financial_data.update(self._fallback_daily_fetch(pro, stock_codes, current_date, segment_end))
 
-        print(f"财务数据获取完成，共 {len(financial_data)} 天有数据")
+            # 移动到下一段
+            current_date = segment_end + timedelta(days=1)
+
+        print(f"分段获取完成，共 {len(financial_data)} 天有数据")
         return financial_data
+
+    def _fallback_daily_fetch(self, pro, stock_codes, start_date, end_date):
+        """
+        降级方案：单日获取
+
+        Args:
+            pro: TuShare API客户端
+            stock_codes: 股票代码列表
+            start_date: 开始日期
+            end_date: 结束日期
+
+        Returns:
+            dict: 按日期组织的财务数据
+        """
+        financial_data = {}
+
+        print("    使用降级方案：单日获取")
+
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime('%Y%m%d')
+
+            try:
+                time.sleep(0.2)  # 更短的等待时间
+
+                df = pro.daily_basic(
+                    trade_date=date_str,
+                    fields='trade_date,ts_code,pe,pe_ttm,pb,total_mv,circ_mv'
+                )
+
+                if not df.empty:
+                    df_filtered = df[df['ts_code'].isin(stock_codes)]
+
+                    if not df_filtered.empty:
+                        df_valid = df_filtered.dropna(subset=['total_mv', 'circ_mv'])
+
+                        if not df_valid.empty:
+                            financial_data[date_str] = df_valid.to_dict('records')
+
+            except Exception as e:
+                print(f"    单日获取 {date_str} 失败: {e}")
+
+            current_date += timedelta(days=1)
+
+        return financial_data
+
+    def _get_financial_data_adaptive(self, pro, stock_codes, start_date, end_date):
+        """
+        自适应获取财务数据
+
+        Args:
+            pro: TuShare API客户端
+            stock_codes: 股票代码列表
+            start_date: 开始日期
+            end_date: 结束日期
+
+        Returns:
+            dict: 按日期组织的财务数据
+        """
+        # 计算时间跨度和数据量
+        time_span = (end_date - start_date).days
+        stock_count = len(stock_codes)
+
+        print(f"数据获取参数: {stock_count} 只股票, {time_span} 天")
+
+        # 根据数据量自适应选择分段大小
+        if time_span <= 30:
+            segment_days = 7  # 短期：7天一段
+        elif time_span <= 90:
+            segment_days = 10  # 中期：10天一段
+        elif time_span <= 365:
+            segment_days = 15  # 长期：15天一段
+        else:
+            segment_days = 30  # 超长期：30天一段
+
+        # 如果股票数量很多，减少分段大小
+        if stock_count > 500:
+            segment_days = max(3, segment_days // 2)
+
+        print(f"自适应分段大小: {segment_days} 天")
+
+        return self._get_financial_data(pro, stock_codes, start_date, end_date, segment_days)
 
     def _calculate_both_weighted_metrics(self, monthly_stock_info, financial_data, consistent_stocks, start_date,
                                          end_date):
