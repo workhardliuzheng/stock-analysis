@@ -24,4 +24,4 @@ CREATE TABLE `stock_basic` (
   KEY `idx_list_status` (`list_status`) COMMENT '上市状态索引',
   KEY `idx_area` (`area`) COMMENT '地域索引',
   KEY `idx_industry` (`industry`) COMMENT '行业索引'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMEN
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT 'A股市场股票列表'

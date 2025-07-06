@@ -43,7 +43,7 @@ class SixtyIndexAnalysis:
     # 自动同步数据
     def additional_data(self):
         # 同步权重
-        additional_data()
+        #additional_data()
         # 同步指数价值
         for ts_code in constant.TS_CODE_LIST:
             history_start_date = constant.HISTORY_START_DATE_MAP[ts_code]

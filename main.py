@@ -7,6 +7,7 @@ from sync.index.sixty_index_analysis import SixtyIndexAnalysis
 from sync.market_data import market_data_sync
 from sync.market_data.market_data_sync import additional_data
 from sync.index.sync_stock_weight import additional_data as sync_stock_weight
+from sync.stock.sync_stock_basic import sync_all_stock_basic
 
 # 按 ⌃R 执行或将其替换为您的代码。
 # 按 双击 ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。。
@@ -14,10 +15,12 @@ from sync.index.sync_stock_weight import additional_data as sync_stock_weight
 
 # 示例使用
 if __name__ == "__main__":
-    sync_stock_weight()
+    #sync_stock_weight()
 
-    six = SixtyIndexAnalysis()
-    six.additional_data()
+    #six = SixtyIndexAnalysis()
+    #six.additional_data()
+
+    sync_all_stock_basic()
     #res = six.get_index_pe_pb('000300.SH', '20250101', '20250228')
 
     #print(res)

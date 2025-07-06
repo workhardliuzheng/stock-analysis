@@ -80,49 +80,13 @@ def batch_process_stock_basic(stock_basic_df):
 
         # 当达到批量大小时，执行批量插入或更新
         if len(batch_data) >= BATCH_SIZE:
-            _process_batch_data(batch_data)
+            mapper.upsert_stock_basic_batch(batch_data)
             print(f"已处理 {total_count} 条数据，当前批次处理 {len(batch_data)} 条")
             batch_data = []
 
     # 处理剩余的数据
     if batch_data:
-        _process_batch_data(batch_data)
+        mapper.upsert_stock_basic_batch(batch_data)
         print(f"最后批次处理 {len(batch_data)} 条数据")
 
     print(f"股票基础信息处理完成，共处理 {total_count} 条数据")
-
-def _process_batch_data(batch_data):
-    """处理批量数据，支持插入和更新"""
-    try:
-        # 先尝试批量插入，如果存在重复则进行更新
-        for stock_basic in batch_data:
-            existing_stock = mapper.get_stock_basic_by_ts_code(stock_basic.get_ts_code())
-            if existing_stock:
-                # 更新现有记录
-                stock_basic.set_id(existing_stock.id)
-                mapper.update_stock_basic(stock_basic)
-            else:
-                # 插入新记录
-                mapper.insert_stock_basic(stock_basic)
-
-    except Exception as e:
-        print(f"批量处理数据失败: {e}")
-        # 如果批量处理失败，尝试逐条处理
-        for stock_basic in batch_data:
-            try:
-                existing_stock = mapper.get_stock_basic_by_ts_code(stock_basic.get_ts_code())
-                if existing_stock:
-                    stock_basic.set_id(existing_stock.id)
-                    mapper.update_stock_basic(stock_basic)
-                else:
-                    mapper.insert_stock_basic(stock_basic)
-            except Exception as single_error:
-                print(f"处理股票 {stock_basic.get_ts_code()} 失败: {single_error}")
-
-def update_stock_basic():
-    """增量更新股票基础信息"""
-    try:
-        # 获取最近更新的股票信息（通常股票基础信息变化不频繁，可以定期全量更新）
-        sync_all_stock_basic()
-    except Exception as e:
-        print(f"更新股票基础信息失败: {e}")
