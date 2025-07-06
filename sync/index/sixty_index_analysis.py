@@ -213,15 +213,15 @@ class SixtyIndexAnalysis:
         stock_basic_map = {}
 
         for stock in active_stocks:
-            ts_code = stock.get_ts_code()
+            ts_code = stock.ts_code
             active_ts_codes.add(ts_code)
             stock_basic_map[ts_code] = {
-                'stock_name': stock.get_name(),
-                'area': stock.get_area(),
-                'industry': stock.get_industry(),
-                'list_date': stock.get_list_date(),
-                'delist_date': stock.get_delist_date(),
-                'list_status': stock.get_list_status()
+                'stock_name': stock.name,
+                'area': stock.area,
+                'industry': stock.industry,
+                'list_date': stock.list_date,
+                'delist_date': stock.delist_date,
+                'list_status': stock.list_status
             }
 
         print(f"在时间段 {start_date.strftime('%Y-%m-%d')} 到 {end_date.strftime('%Y-%m-%d')} 内，"
