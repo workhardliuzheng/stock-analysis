@@ -17,10 +17,10 @@ from sync.stock.sync_stock_basic import sync_all_stock_basic
 if __name__ == "__main__":
     #sync_stock_weight()
 
-    #six = SixtyIndexAnalysis()
-    #six.additional_data()
+    six = SixtyIndexAnalysis()
+    six.additional_data()
 
-    sync_all_stock_basic()
+    #sync_all_stock_basic()
     #res = six.get_index_pe_pb('000300.SH', '20250101', '20250228')
 
     #print(res)

@@ -10,6 +10,7 @@ from entity.stock_data import StockData
 from entity.stock_weight import StockWeight
 from mysql_connect.common_mapper import CommonMapper
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
+from mysql_connect.stock_basic_mapper import StockBasicMapper
 from mysql_connect.stock_weight_mapper import StockWeightMapper
 from sync.index.sync_stock_weight import additional_data
 from tu_share_factory.tu_share_factory import TuShareFactory
@@ -26,6 +27,7 @@ TRADE_CAL_FIELDS= [
 
 mapper = SixtyIndexMapper()
 stock_weight_mapper = StockWeightMapper()
+stock_basic_mapper = StockBasicMapper()
 
 class SixtyIndexAnalysis:
 
@@ -187,8 +189,43 @@ class SixtyIndexAnalysis:
         return pd.DataFrame(result_data)
 
     def _get_monthly_stock_weights(self, index_code, start_date, end_date):
-        """获取每个月的成分股权重数据"""
+        """
+        获取每个月的成分股权重数据，结合股票基础信息过滤已上市且未退市的公司
+
+        Args:
+            index_code: 指数代码
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
+
+        Returns:
+            dict: 每个月的成分股权重数据
+        """
         monthly_stock_info = {}
+
+        # 1. 获取在整个时间段内处于上市状态的股票列表
+        active_stocks = self._get_active_stocks_in_period(start_date, end_date)
+        if not active_stocks:
+            print("在指定时间段内未找到处于上市状态的股票")
+            return monthly_stock_info
+
+        # 构建活跃股票代码集合和基础信息映射
+        active_ts_codes = set()
+        stock_basic_map = {}
+
+        for stock in active_stocks:
+            ts_code = stock.get_ts_code()
+            active_ts_codes.add(ts_code)
+            stock_basic_map[ts_code] = {
+                'stock_name': stock.get_name(),
+                'area': stock.get_area(),
+                'industry': stock.get_industry(),
+                'list_date': stock.get_list_date(),
+                'delist_date': stock.get_delist_date(),
+                'list_status': stock.get_list_status()
+            }
+
+        print(f"在时间段 {start_date.strftime('%Y-%m-%d')} 到 {end_date.strftime('%Y-%m-%d')} 内，"
+              f"共找到 {len(active_ts_codes)} 只处于上市状态的股票")
 
         current_month_start = start_date
         while current_month_start <= end_date:
@@ -198,24 +235,41 @@ class SixtyIndexAnalysis:
 
             try:
                 # 获取当前月份的指数成分股及其权重
-                stock = stock_weight_mapper.select_by_code_and_trade_round(
+                stock_weights = stock_weight_mapper.select_by_code_and_trade_round(
                     index_code=index_code,
                     start_date=current_month_start.strftime('%Y%m%d'),
                     end_date=current_month_end.strftime('%Y%m%d')
                 )
 
-                if stock:
+                if stock_weights:
                     stock_info = []
-                    for row in stock:
+                    filtered_count = 0
+                    total_count = 0
+
+                    for row in stock_weights:
+                        total_count += 1
                         stock_data = ClassUtil.create_entities_from_data(StockWeight, row)
-                        stock_info.append(stock_data.to_dict())
+                        con_code = stock_data.get_con_code()
+
+                        # 只保留在时间段内处于上市状态的股票
+                        if con_code in active_ts_codes:
+                            stock_dict = stock_data.to_dict()
+                            # 添加股票基础信息
+                            stock_dict.update(stock_basic_map[con_code])
+                            stock_info.append(stock_dict)
+                            filtered_count += 1
 
                     if stock_info:
                         stock_df = pd.DataFrame(stock_info)
                         # 去重并存储，保留权重最大的记录
                         month_stock_info = stock_df.loc[stock_df.groupby('con_code')['weight'].idxmax()]
                         monthly_stock_info[current_month_start] = month_stock_info
-                        print(f"月份 {current_month_start.strftime('%Y-%m')}: 获取到 {len(month_stock_info)} 只成分股")
+                        print(f"月份 {current_month_start.strftime('%Y-%m')}: "
+                              f"原始成分股 {total_count} 只，过滤后 {filtered_count} 只，"
+                              f"去重后 {len(month_stock_info)} 只")
+                    else:
+                        print(f"月份 {current_month_start.strftime('%Y-%m')}: "
+                              f"原始成分股 {total_count} 只，过滤后无有效股票")
 
             except Exception as e:
                 print(f"获取月份 {current_month_start.strftime('%Y-%m')} 数据失败: {e}")
@@ -224,6 +278,28 @@ class SixtyIndexAnalysis:
             current_month_start = next_month_start
 
         return monthly_stock_info
+
+    def _get_active_stocks_in_period(self, start_date, end_date):
+        """
+        获取在指定时间段内处于上市状态的股票
+
+        Args:
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
+
+        Returns:
+            list: StockBasic对象列表
+        """
+        try:
+            # 使用StockBasicMapper获取在时间段内处于上市状态的股票
+            active_stocks = stock_basic_mapper.get_active_stocks_in_date_range(
+                start_date.strftime('%Y%m%d'),
+                end_date.strftime('%Y%m%d')
+            )
+            return active_stocks
+        except Exception as e:
+            print(f"获取活跃股票列表失败: {e}")
+            return []
 
     def _analyze_stock_existence(self, monthly_stock_info, start_date, end_date):
         """分析股票在整个期间的存在情况"""
@@ -273,81 +349,6 @@ class SixtyIndexAnalysis:
             'stock_monthly_presence': stock_monthly_presence
         }
 
-    def _get_financial_data(self, pro, stock_codes, start_date, end_date, segment_days=7):
-        """
-        分段获取财务数据
-
-        Args:
-            pro: TuShare API客户端
-            stock_codes: 股票代码列表
-            start_date: 开始日期 (datetime对象)
-            end_date: 结束日期 (datetime对象)
-            segment_days: 每段获取的天数，默认7天
-
-        Returns:
-            dict: 按日期组织的财务数据
-        """
-        financial_data = {}
-
-        print(f"开始分段获取 {len(stock_codes)} 只股票的财务数据...")
-        print(f"时间范围: {start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')}")
-        print(f"分段策略: 每 {segment_days} 天获取一次")
-
-        current_date = start_date
-        segment_count = 0
-        total_segments = ((end_date - start_date).days // segment_days) + 1
-
-        while current_date <= end_date:
-            segment_count += 1
-            segment_end = min(current_date + timedelta(days=segment_days - 1), end_date)
-
-            current_date_str = current_date.strftime('%Y%m%d')
-            segment_end_str = segment_end.strftime('%Y%m%d')
-
-            try:
-                print(f"获取第 {segment_count}/{total_segments} 段数据: {current_date_str} - {segment_end_str}")
-
-                # 控制API调用频率
-                time.sleep(0.3)
-
-                df = pro.daily_basic(
-                    start_date=current_date_str,
-                    end_date=segment_end_str,
-                    fields='trade_date,ts_code,pe,pe_ttm,pb,total_mv,circ_mv'
-                )
-
-                if not df.empty:
-                    # 只保留我们关心的股票
-                    df_filtered = df[df['ts_code'].isin(stock_codes)]
-
-                    if not df_filtered.empty:
-                        # 只保留有效数据（total_mv和circ_mv不为空）
-                        df_valid = df_filtered.dropna(subset=['total_mv', 'circ_mv'])
-
-                        if not df_valid.empty:
-                            # 按日期分组存储
-                            for trade_date, group in df_valid.groupby('trade_date'):
-                                financial_data[trade_date] = group.to_dict('records')
-
-                            print(
-                                f"  第 {segment_count} 段获取到 {len(df_valid)} 条有效数据，覆盖 {len(df_valid.groupby('trade_date'))} 个交易日")
-                        else:
-                            print(f"  第 {segment_count} 段无有效数据")
-                    else:
-                        print(f"  第 {segment_count} 段无目标股票数据")
-                else:
-                    print(f"  第 {segment_count} 段无数据返回")
-
-            except Exception as e:
-                print(f"获取第 {segment_count} 段数据失败: {e}")
-                # 如果API调用失败，尝试降级为单日获取
-                financial_data.update(self._fallback_daily_fetch(pro, stock_codes, current_date, segment_end))
-
-            # 移动到下一段
-            current_date = segment_end + timedelta(days=1)
-
-        print(f"分段获取完成，共 {len(financial_data)} 天有数据")
-        return financial_data
 
     def _fallback_daily_fetch(self, pro, stock_codes, start_date, end_date):
         """
@@ -396,40 +397,147 @@ class SixtyIndexAnalysis:
 
     def _get_financial_data_adaptive(self, pro, stock_codes, start_date, end_date):
         """
-        自适应获取财务数据
+        按股票代码和时间分批获取财务数据，每25年一批
 
         Args:
             pro: TuShare API客户端
             stock_codes: 股票代码列表
-            start_date: 开始日期
-            end_date: 结束日期
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
 
         Returns:
-            dict: 按日期组织的财务数据
+            dict: 按股票代码组织的财务数据 {ts_code: {date: data}}
         """
-        # 计算时间跨度和数据量
-        time_span = (end_date - start_date).days
+        financial_data = {}
+
+        # 计算时间跨度
+        time_span = (end_date - start_date).days + 1
         stock_count = len(stock_codes)
 
-        print(f"数据获取参数: {stock_count} 只股票, {time_span} 天")
+        print(f"开始获取财务数据: {stock_count} 只股票, {time_span} 天")
+        print(f"时间范围: {start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')}")
 
-        # 根据数据量自适应选择分段大小
-        if time_span <= 30:
-            segment_days = 7  # 短期：7天一段
-        elif time_span <= 90:
-            segment_days = 10  # 中期：10天一段
-        elif time_span <= 365:
-            segment_days = 15  # 长期：15天一段
+        # 按股票代码循环
+        for stock_idx, ts_code in enumerate(stock_codes, 1):
+            print(f"\n处理第 {stock_idx}/{stock_count} 只股票: {ts_code}")
+
+            try:
+                # 获取单只股票的财务数据
+                stock_data = self._get_single_stock_financial_data(pro, ts_code, start_date, end_date)
+                if stock_data:
+                    financial_data[ts_code] = stock_data
+                    print(f"  股票 {ts_code} 获取到 {len(stock_data)} 天的数据")
+                else:
+                    print(f"  股票 {ts_code} 未获取到数据")
+
+            except Exception as e:
+                print(f"  获取股票 {ts_code} 数据失败: {e}")
+                continue
+
+        print(f"\n财务数据获取完成，共处理 {len(financial_data)} 只股票")
+        return financial_data
+
+    def _get_single_stock_financial_data(self, pro, ts_code, start_date, end_date):
+        """
+        获取单只股票的财务数据，按25年分批处理
+
+        Args:
+            pro: TuShare API客户端
+            ts_code: 股票代码
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
+
+        Returns:
+            dict: 该股票的财务数据 {date: data}
+        """
+        stock_financial_data = {}
+
+        # 计算时间跨度（年）
+        time_span_years = (end_date - start_date).days / 365.25
+
+        if time_span_years <= 25:
+            # 时间跨度小于等于25年，一批处理
+            print(f"    时间跨度 {time_span_years:.1f} 年，一批处理")
+            batch_data = self._fetch_financial_data_batch(pro, ts_code, start_date, end_date)
+            stock_financial_data.update(batch_data)
         else:
-            segment_days = 30  # 超长期：30天一段
+            # 时间跨度大于25年，按25年分批处理
+            print(f"    时间跨度 {time_span_years:.1f} 年，按25年分批处理")
 
-        # 如果股票数量很多，减少分段大小
-        if stock_count > 500:
-            segment_days = max(3, segment_days // 2)
+            current_start = start_date
+            batch_count = 0
 
-        print(f"自适应分段大小: {segment_days} 天")
+            while current_start <= end_date:
+                batch_count += 1
+                # 计算当前批次的结束日期（25年后）
+                current_end = min(
+                    current_start.replace(year=current_start.year + 25) - timedelta(days=1),
+                    end_date
+                )
 
-        return self._get_financial_data(pro, stock_codes, start_date, end_date, segment_days)
+                print(
+                    f"    处理第 {batch_count} 批: {current_start.strftime('%Y-%m-%d')} 至 {current_end.strftime('%Y-%m-%d')}")
+
+                try:
+                    batch_data = self._fetch_financial_data_batch(pro, ts_code, current_start, current_end)
+                    stock_financial_data.update(batch_data)
+                    print(f"      第 {batch_count} 批获取到 {len(batch_data)} 天的数据")
+
+                except Exception as e:
+                    print(f"      第 {batch_count} 批获取失败: {e}")
+
+                # 移动到下一个25年批次
+                current_start = current_end + timedelta(days=1)
+
+        return stock_financial_data
+
+    def _fetch_financial_data_batch(self, pro, ts_code, start_date, end_date):
+        """
+        获取单个时间批次的财务数据
+
+        Args:
+            pro: TuShare API客户端
+            ts_code: 股票代码
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
+
+        Returns:
+            dict: 财务数据 {date: data}
+        """
+        batch_data = {}
+
+        try:
+            # API调用频率控制
+            time.sleep(0.3)
+
+            # 获取数据
+            df = pro.daily_basic(
+                ts_code=ts_code,
+                start_date=start_date.strftime('%Y%m%d'),
+                end_date=end_date.strftime('%Y%m%d'),
+                fields='trade_date,ts_code,pe,pe_ttm,pb,total_mv,circ_mv'
+            )
+
+            if not df.empty:
+                # 过滤有效数据
+                df_valid = df.dropna(subset=['total_mv', 'circ_mv'])
+
+                # 组织数据
+                for _, row in df_valid.iterrows():
+                    trade_date = row['trade_date']
+                    batch_data[trade_date] = {
+                        'pe': row['pe'] if pd.notna(row['pe']) else None,
+                        'pe_ttm': row['pe_ttm'] if pd.notna(row['pe_ttm']) else None,
+                        'pb': row['pb'] if pd.notna(row['pb']) else None,
+                        'total_mv': row['total_mv'] if pd.notna(row['total_mv']) else None,
+                        'circ_mv': row['circ_mv'] if pd.notna(row['circ_mv']) else None
+                    }
+
+        except Exception as e:
+            print(f"        批次数据获取失败: {e}")
+            raise e
+
+        return batch_data
 
     def _calculate_both_weighted_metrics(self, monthly_stock_info, financial_data, consistent_stocks, start_date,
                                          end_date):
