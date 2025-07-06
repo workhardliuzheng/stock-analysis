@@ -302,98 +302,135 @@ class SixtyIndexAnalysis:
             return []
 
     def _analyze_stock_existence(self, monthly_stock_info, start_date, end_date):
-        """分析股票在整个期间的存在情况"""
+        """
+        以最新的股票权重数据为基础，获取在指定时间段内已上市且未退市的股票
+
+        Args:
+            monthly_stock_info: 月度股票权重信息
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
+
+        Returns:
+            dict: 包含有效股票信息的字典
+        """
         if not monthly_stock_info:
-            return {'consistent_stocks': set(), 'all_stocks': set()}
+            return {'consistent_stocks': set(), 'all_stocks': set(), 'latest_stocks': set()}
 
-        # 获取所有股票
+        # 1. 获取最新月份的股票权重数据
+        latest_month = max(monthly_stock_info.keys())
+        latest_stock_df = monthly_stock_info[latest_month]
+
+        print(f"以最新月份 {latest_month.strftime('%Y-%m')} 的权重数据为基础")
+        print(f"最新月份包含 {len(latest_stock_df)} 只股票")
+
+        # 2. 获取最新月份权重大于0的股票代码
+        valid_weight_stocks = set()
+        for _, row in latest_stock_df.iterrows():
+            if row['weight'] > 0:
+                valid_weight_stocks.add(row['con_code'])
+
+        print(f"最新月份权重>0的股票数: {len(valid_weight_stocks)}")
+
+        # 3. 筛选在指定时间段内已上市且未退市的股票
+        active_stocks_in_period = set()
+
+        print(
+            f"开始筛选在时间段 {start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')} 内已上市且未退市的股票...")
+
+        for ts_code in valid_weight_stocks:
+            try:
+                # 获取股票基础信息
+                stock_basic = stock_basic_mapper.get_stock_basic_by_ts_code(ts_code)
+
+                if stock_basic is None:
+                    print(f"  股票 {ts_code}: 未找到基础信息，跳过")
+                    continue
+
+                # 检查股票在指定时间段内是否活跃
+                if self._is_stock_active_in_period(stock_basic, start_date, end_date):
+                    active_stocks_in_period.add(ts_code)
+
+            except Exception as e:
+                print(f"  检查股票 {ts_code} 活跃状态失败: {e}")
+                continue
+
+        # 4. 获取所有历史月份出现过的股票（用于统计）
         all_stocks = set()
-        stock_monthly_presence = {}
-
         for month_start, stock_df in monthly_stock_info.items():
             month_stocks = set(stock_df['con_code'].tolist())
             all_stocks.update(month_stocks)
+
+        # 5. 分析股票在各月份的存在情况（保持原有逻辑用于统计）
+        stock_monthly_presence = {}
+        for month_start, stock_df in monthly_stock_info.items():
+            month_stocks = set(stock_df['con_code'].tolist())
 
             for stock in month_stocks:
                 if stock not in stock_monthly_presence:
                     stock_monthly_presence[stock] = []
                 stock_monthly_presence[stock].append(month_start)
 
-        # 计算总月份数
-        total_months = len(monthly_stock_info)
-
-        # 找到在所有月份都存在的股票
-        consistent_stocks = set()
-        for stock, months in stock_monthly_presence.items():
-            if len(months) == total_months:
-                # 进一步检查权重是否合理（大于0）
-                is_valid = True
-                for month_start in months:
-                    stock_weight = monthly_stock_info[month_start]
-                    stock_row = stock_weight[stock_weight['con_code'] == stock]
-                    if stock_row.empty or stock_row.iloc[0]['weight'] <= 0:
-                        is_valid = False
-                        break
-
-                if is_valid:
-                    consistent_stocks.add(stock)
-
-        print(f"股票存在性分析:")
-        print(f"  总股票数: {len(all_stocks)}")
-        print(f"  总月份数: {total_months}")
-        print(f"  在所有月份都存在且权重>0的股票数: {len(consistent_stocks)}")
+        print(f"股票筛选结果:")
+        print(f"  历史所有股票数: {len(all_stocks)}")
+        print(f"  最新月份股票数: {len(latest_stock_df)}")
+        print(f"  最新月份权重>0股票数: {len(valid_weight_stocks)}")
+        print(f"  在时间段内已上市且未退市的股票数: {len(active_stocks_in_period)}")
 
         return {
-            'consistent_stocks': consistent_stocks,
+            'consistent_stocks': active_stocks_in_period,  # 主要返回结果：在时间段内活跃的股票
             'all_stocks': all_stocks,
+            'latest_stocks': set(latest_stock_df['con_code'].tolist()),
             'stock_monthly_presence': stock_monthly_presence
         }
 
-
-    def _fallback_daily_fetch(self, pro, stock_codes, start_date, end_date):
+    def _is_stock_active_in_period(self, stock_basic, start_date, end_date):
         """
-        降级方案：单日获取
+        判断股票在指定时间段内是否处于上市状态
 
         Args:
-            pro: TuShare API客户端
-            stock_codes: 股票代码列表
-            start_date: 开始日期
-            end_date: 结束日期
+            stock_basic: StockBasic对象
+            start_date: 开始日期 (datetime对象)
+            end_date: 结束日期 (datetime对象)
 
         Returns:
-            dict: 按日期组织的财务数据
+            bool: 是否在指定时间段内活跃
         """
-        financial_data = {}
+        try:
+            # 1. 检查上市状态
+            if stock_basic.get_list_status() != 'L':
+                return False
 
-        print("    使用降级方案：单日获取")
+            # 2. 检查上市日期
+            list_date_str = stock_basic.get_list_date()
+            if list_date_str and list_date_str.strip():
+                try:
+                    list_date = datetime.strptime(list_date_str, '%Y%m%d')
+                    # 上市日期必须在结束日期之前或当天
+                    if list_date > end_date:
+                        return False
+                except ValueError:
+                    print(f"    股票 {stock_basic.get_ts_code()} 上市日期格式错误: {list_date_str}")
+                    return False
 
-        current_date = start_date
-        while current_date <= end_date:
-            date_str = current_date.strftime('%Y%m%d')
+            # 3. 检查退市日期
+            delist_date_str = stock_basic.get_delist_date()
+            if delist_date_str and delist_date_str.strip():
+                try:
+                    delist_date = datetime.strptime(delist_date_str, '%Y%m%d')
+                    # 退市日期必须在开始日期之后
+                    if delist_date < start_date:
+                        return False
+                except ValueError:
+                    print(f"    股票 {stock_basic.get_ts_code()} 退市日期格式错误: {delist_date_str}")
+                    # 如果退市日期格式错误，假设未退市
+                    pass
 
-            try:
-                time.sleep(0.2)  # 更短的等待时间
+            return True
 
-                df = pro.daily_basic(
-                    trade_date=date_str,
-                    fields='trade_date,ts_code,pe,pe_ttm,pb,total_mv,circ_mv'
-                )
+        except Exception as e:
+            print(f"    判断股票 {stock_basic.get_ts_code()} 活跃状态失败: {e}")
+            return False
 
-                if not df.empty:
-                    df_filtered = df[df['ts_code'].isin(stock_codes)]
-
-                    if not df_filtered.empty:
-                        df_valid = df_filtered.dropna(subset=['total_mv', 'circ_mv'])
-
-                        if not df_valid.empty:
-                            financial_data[date_str] = df_valid.to_dict('records')
-
-            except Exception as e:
-                print(f"    单日获取 {date_str} 失败: {e}")
-
-            current_date += timedelta(days=1)
-
-        return financial_data
 
     def _get_financial_data_adaptive(self, pro, stock_codes, start_date, end_date):
         """
