@@ -1,0 +1,23 @@
+CREATE TABLE `stock_daily_basic` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT '自增主键',
+  `ts_code` varchar(20) DEFAULT NULL COMMENT 'TS股票代码',
+  `trade_date` varchar(30) DEFAULT NULL COMMENT '交易日期',
+  `close` float(30,4) DEFAULT NULL COMMENT '当日收盘价',
+  `turnover_rate` float(30,4) DEFAULT NULL COMMENT '换手率（%）',
+  `turnover_rate_f` float(30,4) DEFAULT NULL COMMENT '换手率（自由流通股）',
+  `volume_ratio` float(30,4) DEFAULT NULL COMMENT '量比',
+  `pe` float(30,4) DEFAULT NULL COMMENT '市盈率（总市值/净利润，亏损的PE为空）',
+  `pe_ttm` float(30,4) DEFAULT NULL COMMENT '市盈率（TTM，亏损的PE为空）',
+  `pb` float(30,4) DEFAULT NULL COMMENT '市净率（总市值/净资产）',
+  `ps` float(30,4) DEFAULT NULL COMMENT '市销率',
+  `ps_ttm` float(30,4) DEFAULT NULL COMMENT '市销率（TTM）',
+  `dv_ratio` float(30,4) DEFAULT NULL COMMENT '股息率（%）',
+  `dv_ttm` float(30,4) DEFAULT NULL COMMENT '股息率（TTM）（%）',
+  `total_share` float(30,4) DEFAULT NULL COMMENT '总股本（万股）',
+  `float_share` float(30,4) DEFAULT NULL COMMENT '流通股本（万股）',
+  `free_share` float(30,4) DEFAULT NULL COMMENT '自由流通股本（万）',
+  `total_mv` float(30,4) DEFAULT NULL COMMENT '总市值（万元）',
+  `circ_mv` float(30,4) DEFAULT NULL COMMENT '流通市值（万元）',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ts_code_trade_date` (`ts_code`,`trade_date`)
+) ENGINE=InnoDB AUTO_INCREMENT=4930 DEFAULT CHARSET=utf8mb4 COMMENT='股票每日基本面数据表'

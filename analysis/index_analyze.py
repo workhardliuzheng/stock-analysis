@@ -9,7 +9,7 @@ warnings.filterwarnings('ignore')
 from entity import constant
 from entity.stock_data import StockData
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
-from plot.plot_dual_y_axis_line_chart import plot_dual_y_axis_line_chart
+from plot.plot_dual_y_axis_line_chart import plot_dual_y_axis_line_chart, DataPltMetadata
 
 from util.class_util import ClassUtil
 from util.date_util import TimeUtils
@@ -35,9 +35,10 @@ class StockAnalyzer:
             data_frame_list.append(stock_data.to_dict())
 
         self.data = pd.DataFrame(data_frame_list)
+        self.name = constant.TS_CODE_NAME_DICT[ts_code]
 
     """分析偏离率分布"""
-    def analyze_deviation_distribution(self):
+    def _analyze_deviation_distribution(self):
 
         deviation_rates = self.data['deviation_rate'].dropna()
 
@@ -73,7 +74,7 @@ class StockAnalyzer:
         return stats, distribution
 
     """分析不同偏离率下的未来走势"""
-    def analyze_future_trend(self, future_days=[5, 10, 20]):
+    def _analyze_future_trend(self, future_days=[5, 10, 20]):
 
         results = {}
         for days in future_days:
@@ -123,7 +124,7 @@ class StockAnalyzer:
         return results
 
     """寻找反转点和稳定区间"""
-    def find_reversal_points(self, extreme_threshold=5):
+    def _find_reversal_points(self, extreme_threshold=5):
         print(f"\n=== 反转点分析（极值阈值: ±{extreme_threshold}%）===")
 
         reversal_analysis = []
@@ -190,7 +191,7 @@ class StockAnalyzer:
             return None
 
     """绘制分析图表"""
-    def plot_analysis(self):
+    def _plot_analysis(self):
 
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
         fig.suptitle('股票60日线偏离率分析', fontsize=16)
@@ -253,7 +254,7 @@ class StockAnalyzer:
 
 
     # 收盘价与成交量的关系
-    def plot_close_value_and_amount(self, ts_code):
+    def _plot_close_value_and_amount(self, ts_code):
 
         # 将字典列表转换为 DataFrame
         data_of_df = self.data
@@ -262,7 +263,7 @@ class StockAnalyzer:
                                     y1_scale_factor=1, y2_scale_factor=100000,title=name + '收盘价与成交量图')
 
     # 收盘价与60日线关系
-    def plot_close_value_and_sixty_average_amount(self, ts_code):
+    def _plot_close_value_and_sixty_average_amount(self, ts_code):
         # 将字典列表转换为 DataFrame
         data_of_df = self.data
         name = constant.TS_CODE_NAME_DICT[ts_code]
@@ -275,16 +276,16 @@ class StockAnalyzer:
         print("=== 股票60日线偏离率分析系统 ===\n")
 
         # 分析偏离率分布
-        stats, distribution = self.analyze_deviation_distribution()
+        stats, distribution = self._analyze_deviation_distribution()
 
         # 分析未来走势
-        future_analysis = self.analyze_future_trend([5, 10, 20])
+        future_analysis = self._analyze_future_trend([5, 10, 20])
 
         # 寻找反转点
-        reversal_points = self.find_reversal_points(extreme_threshold=5)
+        reversal_points = self._find_reversal_points(extreme_threshold=5)
 
         # 绘制分析图表
-        self.plot_analysis()
+        self._plot_analysis()
 
         print("\n=== 分析完成 ===")
         print("图表已保存为 stock_analysis.png")
@@ -299,201 +300,36 @@ class StockAnalyzer:
         if reversal_points is not None and len(reversal_points) > 0:
             avg_days = reversal_points['days_to_stable'].mean()
             print(f"3. 极端偏离后平均 {avg_days:.1f} 天回归稳定区间")
-    def calculate_percentiles(self, ts_code, target_date=None, lookback_years=None):
-        """
-        计算指定日期的PE/PB/PE_TTM历史百分位
 
-        Args:
-            ts_code: 指数代码
-            target_date: 目标日期，默认为最新日期
-            lookback_years: 回看年数，默认为全部历史
+    def plot_index_pe_pb_weight(self):
+        data = self.data
+        # 计算收盘价与20日线的偏离度（百分比）
 
-        Returns:
-            dict: 包含百分位信息的字典
-        """
-        # 获取数据
-        if lookback_years:
-            start_date = (datetime.now() - timedelta(days=lookback_years * 365)).strftime('%Y-%m-%d')
-            df = self.get_index_data(ts_code, start_date=start_date)
-        else:
-            df = self.get_index_data(ts_code)
+        left_data = DataPltMetadata('close', '收盘价', 1, 'red', linestyle='-')
 
-        if df.empty:
-            print(f"未找到指数 {ts_code} 的数据")
-            return {}
+        right_data1 = DataPltMetadata('pe_ttm_weight', 'pe_ttm_weight', 1, 'orange', linestyle='-')
+        right_data2 = DataPltMetadata('pe_weight', 'pe_weight', 1, 'blue', linestyle='-')
+        right_data3 = DataPltMetadata('pb_weight', 'pb_weight', 1, 'green', linestyle='-')
 
-        # 确定目标日期
-        if target_date is None:
-            target_date = df['trade_date'].max()
-        else:
-            target_date = pd.to_datetime(target_date)
+        left_plot_metadata_list = [left_data]
+        right_plot_metadata_list = [right_data1, right_data2, right_data3]
+        file_path = constant.DEFAULT_FILE_PATH + 'pe加权\\'
+        plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
+                                    right_plot_metadata_list=right_plot_metadata_list, is_save_picture=False,
+                                    title=self.name, file_path=file_path)
+    def plot_index_pe_pb(self):
+        data = self.data
+        # 计算收盘价与20日线的偏离度（百分比）
 
-        # 获取目标日期的数据
-        target_data = df[df['trade_date'] == target_date]
-        if target_data.empty:
-            print(f"未找到日期 {target_date} 的数据")
-            return {}
+        left_data = DataPltMetadata('close', '收盘价', 1, 'red', linestyle='-')
 
-        target_row = target_data.iloc[0]
+        right_data1 = DataPltMetadata('pe_ttm', 'pe_ttm', 1, 'orange', linestyle='-')
+        right_data2 = DataPltMetadata('pe', 'pe', 1, 'blue', linestyle='-')
+        right_data3 = DataPltMetadata('pb', 'pb', 1, 'green', linestyle='-')
 
-        # 计算历史百分位
-        result = {
-            'ts_code': ts_code,
-            'target_date': target_date,
-            'data_start_date': df['trade_date'].min(),
-            'data_end_date': df['trade_date'].max(),
-            'total_days': len(df),
-            'lookback_years': lookback_years
-        }
-
-        # 计算各指标的百分位
-        metrics = ['pe', 'pb', 'pe_ttm', 'pe_weight', 'pe_ttm_weight', 'pb_weight']
-
-        for metric in metrics:
-            if pd.notna(target_row[metric]):
-                # 过滤掉空值
-                valid_data = df[df[metric].notna()][metric]
-
-                if len(valid_data) > 0:
-                    # 计算百分位
-                    percentile = (valid_data < target_row[metric]).sum() / len(valid_data) * 100
-
-                    result[f'{metric}_current'] = target_row[metric]
-                    result[f'{metric}_percentile'] = round(percentile, 2)
-                    result[f'{metric}_min'] = valid_data.min()
-                    result[f'{metric}_max'] = valid_data.max()
-                    result[f'{metric}_mean'] = valid_data.mean()
-                    result[f'{metric}_median'] = valid_data.median()
-                    result[f'{metric}_valid_days'] = len(valid_data)
-                else:
-                    result[f'{metric}_current'] = target_row[metric]
-                    result[f'{metric}_percentile'] = None
-            else:
-                result[f'{metric}_current'] = None
-                result[f'{metric}_percentile'] = None
-
-        return result
-
-    def analyze_percentile_trend(self, ts_code, days=252):
-        """
-        分析最近一段时间的百分位变化趋势
-
-        Args:
-            ts_code: 指数代码
-            days: 分析天数，默认252天（一年）
-
-        Returns:
-            pd.DataFrame: 包含每日百分位的数据
-        """
-        # 获取数据
-        df = self.get_index_data(ts_code)
-
-        if df.empty or len(df) < days:
-            print(f"数据不足，需要至少 {days} 天的数据")
-            return pd.DataFrame()
-
-        # 取最近的数据
-        recent_df = df.tail(days).copy()
-
-        metrics = ['pe', 'pb', 'pe_ttm', 'pe_weight', 'pe_ttm_weight', 'pb_weight']
-
-        # 计算每日的历史百分位
-        for metric in metrics:
-            percentiles = []
-
-            for i, row in recent_df.iterrows():
-                # 获取当前日期之前的所有数据
-                historical_data = df[df['trade_date'] <= row['trade_date']][metric].dropna()
-
-                if len(historical_data) > 0 and pd.notna(row[metric]):
-                    percentile = (historical_data < row[metric]).sum() / len(historical_data) * 100
-                    percentiles.append(percentile)
-                else:
-                    percentiles.append(None)
-
-            recent_df[f'{metric}_percentile'] = percentiles
-
-        return recent_df
-
-    def print_percentile_report(self, ts_code, target_date=None, lookback_years=None):
-        """
-        打印百分位分析报告
-
-        Args:
-            ts_code: 指数代码
-            target_date: 目标日期
-            lookback_years: 回看年数
-        """
-        result = self.calculate_percentiles(ts_code, target_date, lookback_years)
-
-        if not result:
-            return
-
-        print("=" * 60)
-        print(f"指数百分位分析报告")
-        print("=" * 60)
-        print(f"指数代码: {result['ts_code']}")
-        print(f"分析日期: {result['target_date'].strftime('%Y-%m-%d')}")
-        print(
-            f"数据范围: {result['data_start_date'].strftime('%Y-%m-%d')} 至 {result['data_end_date'].strftime('%Y-%m-%d')}")
-        print(f"总数据天数: {result['total_days']} 天")
-        if lookback_years:
-            print(f"回看年数: {lookback_years} 年")
-        print("-" * 60)
-
-        # 等权指标
-        print("等权指标 (基于市值权重):")
-        for metric in ['pe', 'pb', 'pe_ttm']:
-            if result.get(f'{metric}_percentile') is not None:
-                current = result[f'{metric}_current']
-                percentile = result[f'{metric}_percentile']
-                min_val = result[f'{metric}_min']
-                max_val = result[f'{metric}_max']
-                median = result[f'{metric}_median']
-
-                print(f"  {metric.upper():8}: {current:8.2f} (百分位: {percentile:6.2f}%) "
-                      f"[区间: {min_val:.2f} - {max_val:.2f}, 中位数: {median:.2f}]")
-            else:
-                print(f"  {metric.upper():8}: 无数据")
-
-        print()
-
-        # 加权指标
-        print("加权指标 (基于指数权重):")
-        for metric in ['pe_weight', 'pb_weight', 'pe_ttm_weight']:
-            if result.get(f'{metric}_percentile') is not None:
-                current = result[f'{metric}_current']
-                percentile = result[f'{metric}_percentile']
-                min_val = result[f'{metric}_min']
-                max_val = result[f'{metric}_max']
-                median = result[f'{metric}_median']
-
-                display_name = metric.replace('_weight', '').upper() + '_W'
-                print(f"  {display_name:8}: {current:8.2f} (百分位: {percentile:6.2f}%) "
-                      f"[区间: {min_val:.2f} - {max_val:.2f}, 中位数: {median:.2f}]")
-            else:
-                display_name = metric.replace('_weight', '').upper() + '_W'
-                print(f"  {display_name:8}: 无数据")
-
-        print("=" * 60)
-
-        # 估值水平判断
-        print("估值水平判断:")
-        for metric in ['pe', 'pb', 'pe_ttm', 'pe_weight', 'pb_weight', 'pe_ttm_weight']:
-            percentile = result.get(f'{metric}_percentile')
-            if percentile is not None:
-                if percentile <= 10:
-                    level = "极低估值"
-                elif percentile <= 25:
-                    level = "低估值"
-                elif percentile <= 75:
-                    level = "合理估值"
-                elif percentile <= 90:
-                    level = "高估值"
-                else:
-                    level = "极高估值"
-
-                display_name = metric.replace('_weight', '_W').upper()
-                print(f"  {display_name}: {level} ({percentile:.1f}%)")
-
-        print("=" * 60)
+        left_plot_metadata_list = [left_data]
+        right_plot_metadata_list = [right_data1, right_data2, right_data3]
+        file_path = constant.DEFAULT_FILE_PATH + 'pe未加权\\'
+        plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
+                                    right_plot_metadata_list=right_plot_metadata_list, is_save_picture=False,
+                                    title=self.name, file_path=file_path)

@@ -1,4 +1,5 @@
 # 自动同步数据
+import time
 from datetime import datetime, timedelta
 
 from entity import constant
@@ -39,6 +40,7 @@ def sync_stock_weight(index_code, start_date, end_date):
         current_month_end = next_month_start - timedelta(days=1)
 
         # 获取当前月份的指数成分股及其权重
+        time.sleep(0.3)
         stock_info = pro.index_weight(index_code=index_code, start_date=current_month_start.strftime('%Y%m%d'),
                                       end_date=current_month_end.strftime('%Y%m%d'))
 

@@ -6,11 +6,13 @@ import tushare as ts
 import yaml
 
 from entity import constant
+from entity.stock_daily_basic import StockDailyBasic
 from entity.stock_data import StockData
 from entity.stock_weight import StockWeight
 from mysql_connect.common_mapper import CommonMapper
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from mysql_connect.stock_basic_mapper import StockBasicMapper
+from mysql_connect.stock_daily_basic_mapper import StockDailyBasicMapper
 from mysql_connect.stock_weight_mapper import StockWeightMapper
 from sync.index.sync_stock_weight import additional_data
 from tu_share_factory.tu_share_factory import TuShareFactory
@@ -28,6 +30,7 @@ TRADE_CAL_FIELDS= [
 mapper = SixtyIndexMapper()
 stock_weight_mapper = StockWeightMapper()
 stock_basic_mapper = StockBasicMapper()
+stock_daily_basic_mapper = StockDailyBasicMapper()
 
 class SixtyIndexAnalysis:
 
@@ -57,7 +60,7 @@ class SixtyIndexAnalysis:
                 max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
             self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
-            self.additional_pe_data_and_update_mapper(ts_code, constant.HISTORY_START_DATE_MAP[ts_code], TimeUtils.get_current_date_str())
+            self.additional_pe_data_and_update_mapper(ts_code, constant.PE_HISTORY_START_DATE_MAP[ts_code], TimeUtils.get_current_date_str())
 
 
 
@@ -170,18 +173,11 @@ class SixtyIndexAnalysis:
         print(f"找到 {len(stock_analysis['consistent_stocks'])} 只在整个期间都存在的股票")
 
         # 3. 获取财务数据
-        financial_data = self._get_financial_data_adaptive(pro, stock_analysis['consistent_stocks'], start_date,
+        self._get_financial_data_adaptive(pro, stock_analysis['consistent_stocks'], start_date,
                                                            end_date)
 
-        if not financial_data:
-            print("未获取到财务数据")
-            return pd.DataFrame(columns=[
-                'trade_date', 'weighted_pe', 'weighted_pe_ttm', 'weighted_pb',
-                'equal_weight_pe', 'equal_weight_pe_ttm', 'equal_weight_pb'
-            ])
-
         # 4. 计算每日加权PE/PB和等权PE/PB
-        result_data = self._calculate_both_weighted_metrics(monthly_stock_info, financial_data,
+        result_data = self._calculate_both_weighted_metrics(monthly_stock_info,
                                                             stock_analysis['consistent_stocks'],
                                                             start_date, end_date)
 
@@ -331,11 +327,14 @@ class SixtyIndexAnalysis:
 
         print(f"最新月份权重>0的股票数: {len(valid_weight_stocks)}")
 
-        # 3. 筛选在指定时间段内已上市且未退市的股票
+        # 3. 筛选在指定时间段内已上市且未退市的股票，并且权重都大于0
         active_stocks_in_period = set()
 
         print(
             f"开始筛选在时间段 {start_date.strftime('%Y-%m-%d')} 至 {end_date.strftime('%Y-%m-%d')} 内已上市且未退市的股票...")
+
+        # 生成指定时间段内的所有月份列表
+        month_list = monthly_stock_info.keys()
 
         for ts_code in valid_weight_stocks:
             try:
@@ -345,9 +344,23 @@ class SixtyIndexAnalysis:
                 if stock_basic is None:
                     print(f"  股票 {ts_code}: 未找到基础信息，跳过")
                     continue
+                # 检查是否全区间上市
+                consistent_is_active = self._is_stock_active_in_period(stock_basic, start_date, end_date)
+                # 检查股票在指定时间段内是否活跃并且权重都大于0
+                consistent_in_period = True
+                for month in month_list:
+                    if month not in monthly_stock_info:
+                        consistent_in_period = False
+                        break
 
-                # 检查股票在指定时间段内是否活跃
-                if self._is_stock_active_in_period(stock_basic, start_date, end_date):
+                    month_stock_df = monthly_stock_info[month]
+                    month_stock = month_stock_df[month_stock_df['con_code'] == ts_code]
+
+                    if month_stock.empty or month_stock.iloc[0]['weight'] <= 0:
+                        consistent_in_period = False
+                        break
+
+                if consistent_in_period and consistent_is_active:
                     active_stocks_in_period.add(ts_code)
 
             except Exception as e:
@@ -396,11 +409,7 @@ class SixtyIndexAnalysis:
             bool: 是否在指定时间段内活跃
         """
         try:
-            # 1. 检查上市状态
-            if stock_basic.get_list_status() != 'L':
-                return False
-
-            # 2. 检查上市日期
+            # 1. 检查上市日期
             list_date_str = stock_basic.get_list_date()
             if list_date_str and list_date_str.strip():
                 try:
@@ -412,7 +421,7 @@ class SixtyIndexAnalysis:
                     print(f"    股票 {stock_basic.get_ts_code()} 上市日期格式错误: {list_date_str}")
                     return False
 
-            # 3. 检查退市日期
+            # 2. 检查退市日期
             delist_date_str = stock_basic.get_delist_date()
             if delist_date_str and delist_date_str.strip():
                 try:
@@ -445,7 +454,7 @@ class SixtyIndexAnalysis:
         Returns:
             dict: 按股票代码组织的财务数据 {ts_code: {date: data}}
         """
-        financial_data = {}
+        financial_data = 0
 
         # 计算时间跨度
         time_span = (end_date - start_date).days + 1
@@ -458,21 +467,12 @@ class SixtyIndexAnalysis:
         for stock_idx, ts_code in enumerate(stock_codes, 1):
             print(f"\n处理第 {stock_idx}/{stock_count} 只股票: {ts_code}")
 
-            try:
-                # 获取单只股票的财务数据
-                stock_data = self._get_single_stock_financial_data(pro, ts_code, start_date, end_date)
-                if stock_data:
-                    financial_data[ts_code] = stock_data
-                    print(f"  股票 {ts_code} 获取到 {len(stock_data)} 天的数据")
-                else:
-                    print(f"  股票 {ts_code} 未获取到数据")
+            self._get_single_stock_financial_data(pro, ts_code, start_date, end_date)
+            print(f"  获取股票 {ts_code} 数据")
+            financial_data += 1
 
-            except Exception as e:
-                print(f"  获取股票 {ts_code} 数据失败: {e}")
-                continue
 
-        print(f"\n财务数据获取完成，共处理 {len(financial_data)} 只股票")
-        return financial_data
+        print(f"\n财务数据获取完成，共处理 {financial_data} 只股票")
 
     def _get_single_stock_financial_data(self, pro, ts_code, start_date, end_date):
         """
@@ -487,7 +487,6 @@ class SixtyIndexAnalysis:
         Returns:
             dict: 该股票的财务数据 {date: data}
         """
-        stock_financial_data = {}
 
         # 计算时间跨度（年）
         time_span_years = (end_date - start_date).days / 365.25
@@ -495,8 +494,7 @@ class SixtyIndexAnalysis:
         if time_span_years <= 25:
             # 时间跨度小于等于25年，一批处理
             print(f"    时间跨度 {time_span_years:.1f} 年，一批处理")
-            batch_data = self._fetch_financial_data_batch(pro, ts_code, start_date, end_date)
-            stock_financial_data.update(batch_data)
+            self._fetch_financial_data_batch(pro, ts_code, start_date, end_date)
         else:
             # 时间跨度大于25年，按25年分批处理
             print(f"    时间跨度 {time_span_years:.1f} 年，按25年分批处理")
@@ -516,17 +514,13 @@ class SixtyIndexAnalysis:
                     f"    处理第 {batch_count} 批: {current_start.strftime('%Y-%m-%d')} 至 {current_end.strftime('%Y-%m-%d')}")
 
                 try:
-                    batch_data = self._fetch_financial_data_batch(pro, ts_code, current_start, current_end)
-                    stock_financial_data.update(batch_data)
-                    print(f"      第 {batch_count} 批获取到 {len(batch_data)} 天的数据")
-
+                    self._fetch_financial_data_batch(pro, ts_code, current_start, current_end)
                 except Exception as e:
                     print(f"      第 {batch_count} 批获取失败: {e}")
 
                 # 移动到下一个25年批次
                 current_start = current_end + timedelta(days=1)
 
-        return stock_financial_data
 
     def _fetch_financial_data_batch(self, pro, ts_code, start_date, end_date):
         """
@@ -541,42 +535,84 @@ class SixtyIndexAnalysis:
         Returns:
             dict: 财务数据 {date: data}
         """
-        batch_data = {}
+        exchange = "SZSE" if ts_code.endswith("SZ") else "SSE"
+        time.sleep(0.2)
+        trade_cal = pro.trade_cal(**{
+            "exchange": exchange,
+            "start_date": TimeUtils.get_n_days_before_or_after(end_date.strftime('%Y%m%d'), 20, True),
+            "end_date": end_date.strftime('%Y%m%d')
+        }, fields=TRADE_CAL_FIELDS)
+        trade_cal = trade_cal.sort_index(ascending=False)
+        trading_days = trade_cal[trade_cal['is_open'] == 1]['cal_date'].tolist()
+        max_date = trading_days[len(trading_days) - 1]
 
+        max_trade_date = stock_daily_basic_mapper.select_max_trade_date(ts_code)
+        if max_date == max_trade_date:
+            return
+        max_date = start_date if max_date is None else max_date
         try:
-            # API调用频率控制
-            time.sleep(0.3)
+            batch_idx = 0
 
-            # 获取数据
-            df = pro.daily_basic(
+            # 获取当前批次的每日基础数据
+            daily_basic_df = pro.daily_basic(
                 ts_code=ts_code,
-                start_date=start_date.strftime('%Y%m%d'),
-                end_date=end_date.strftime('%Y%m%d'),
-                fields='trade_date,ts_code,pe,pe_ttm,pb,total_mv,circ_mv'
+                start_date=max_trade_date,
+                end_date=max_date,
+                fields=[ "ts_code", "trade_date", "close", "turnover_rate", "turnover_rate_f", "volume_ratio", "pe", "pe_ttm",
+                         "pb", "ps", "ps_ttm", "dv_ratio", "dv_ttm", "total_share", "float_share", "free_share", "total_mv", "circ_mv"]
             )
+            BATCH_SIZE = 100
+            # 准备批量数据
+            batch_data = []
+            batch_count = 0
+            total_processed = 0
 
-            if not df.empty:
-                # 过滤有效数据
-                df_valid = df.dropna(subset=['total_mv', 'circ_mv'])
+            for _, row in daily_basic_df.iterrows():
+                # 创建每日基础数据对象（这里需要根据你的实体类调整）
+                daily_data = StockDailyBasic(id=None,
+                    ts_code=row['ts_code'],
+                    trade_date=row['trade_date'],
+                    close=row['close'] if pd.notna(row['close']) else None,
+                    turnover_rate=row['turnover_rate'] if pd.notna(row['turnover_rate']) else None,
+                    turnover_rate_f=row['turnover_rate_f'] if pd.notna(row['turnover_rate_f']) else None,
+                    volume_ratio=row['volume_ratio'] if pd.notna(row['volume_ratio']) else None,
+                    pe=row['pe'] if pd.notna(row['pe']) else None,
+                    pe_ttm=row['pe_ttm'] if pd.notna(row['pe_ttm']) else None,
+                    pb=row['pb'] if pd.notna(row['pb']) else None,
+                    ps=row['ps'] if pd.notna(row['ps']) else None,
+                    ps_ttm=row['ps_ttm'] if pd.notna(row['ps_ttm']) else None,
+                    dv_ratio=row['dv_ratio'] if pd.notna(row['dv_ratio']) else None,
+                    dv_ttm=row['dv_ttm'] if pd.notna(row['dv_ttm']) else None,
+                    total_share=row['total_share'] if pd.notna(row['total_share']) else None,
+                    float_share=row['float_share'] if pd.notna(row['float_share']) else None,
+                    free_share=row['free_share'] if pd.notna(row['free_share']) else None,
+                    total_mv=row['total_mv'] if pd.notna(row['total_mv']) else None,
+                    circ_mv=row['circ_mv'] if pd.notna(row['circ_mv']) else None
+                )
 
-                # 组织数据
-                for _, row in df_valid.iterrows():
-                    trade_date = row['trade_date']
-                    batch_data[trade_date] = {
-                        'pe': row['pe'] if pd.notna(row['pe']) else None,
-                        'pe_ttm': row['pe_ttm'] if pd.notna(row['pe_ttm']) else None,
-                        'pb': row['pb'] if pd.notna(row['pb']) else None,
-                        'total_mv': row['total_mv'] if pd.notna(row['total_mv']) else None,
-                        'circ_mv': row['circ_mv'] if pd.notna(row['circ_mv']) else None
-                    }
+                batch_data.append(daily_data)
+                batch_count += 1
 
+                # 当达到批量大小时，执行批量插入
+                if len(batch_data) >= BATCH_SIZE:
+                    stock_daily_basic_mapper.batch_insert_stock_daily_basic(batch_data)  # 假设你有对应的mapper
+                    print(f"  第 {batch_idx} 批已处理 {batch_count} 条数据，当前批次插入 {len(batch_data)} 条")
+                    total_processed += len(batch_data)
+                    batch_data = []  # 清空批量数据
+                    batch_idx += 1
+
+            # 处理剩余的数据
+            if batch_data:
+                stock_daily_basic_mapper.batch_insert_stock_daily_basic(batch_data)
+                print(f"  第 {batch_idx} 批最后批次插入 {len(batch_data)} 条数据")
+                total_processed += len(batch_data)
+
+            print(f"第 {batch_idx} 批处理完成，共处理 {batch_count} 条数据")
         except Exception as e:
             print(f"        批次数据获取失败: {e}")
             raise e
 
-        return batch_data
-
-    def _calculate_both_weighted_metrics(self, monthly_stock_info, financial_data, consistent_stocks, start_date,
+    def _calculate_both_weighted_metrics(self, monthly_stock_info, consistent_stocks, start_date,
                                          end_date):
         """计算加权PE/PB和等权PE/PB指标"""
         result_data = []
@@ -592,15 +628,21 @@ class SixtyIndexAnalysis:
                 current_month_end = end_date
 
             # 获取当前月份的权重数据
-            if current_month_start not in monthly_stock_info:
-                current_month_start = next_month_start
-                continue
+            month_weights = None
+            temp_month_start = current_month_start
+            while temp_month_start >= start_date and month_weights is None:
+                if temp_month_start in monthly_stock_info:
+                    month_weights = monthly_stock_info[temp_month_start]
+                    # 只保留一致存在的股票
+                    month_weights = month_weights[month_weights['con_code'].isin(consistent_stocks)]
+                    if month_weights.empty:
+                        month_weights = None  # 如果过滤后为空，则继续往前找
+                else:
+                    month_weights = None
+                # 移动到上一个月
+                temp_month_start = (temp_month_start.replace(day=1) - timedelta(days=1)).replace(day=1)
 
-            month_weights = monthly_stock_info[current_month_start]
-            # 只保留一致存在的股票
-            month_weights = month_weights[month_weights['con_code'].isin(consistent_stocks)]
-
-            if month_weights.empty:
+            if month_weights is None:
                 current_month_start = next_month_start
                 continue
 
@@ -608,10 +650,16 @@ class SixtyIndexAnalysis:
             current_date = current_month_start
             while current_date <= current_month_end:
                 date_str = current_date.strftime('%Y%m%d')
+                financial_data = stock_daily_basic_mapper.select_by_trade_date(date_str)
 
-                if date_str in financial_data:
+                financial_data_info = []
+                for row in financial_data:
+                    stock_data = ClassUtil.create_entities_from_data(StockDailyBasic, row)
+                    financial_data_info.append(stock_data.to_dict())
+
+                if financial_data:
                     daily_result = self._calculate_daily_both_metrics(
-                        financial_data[date_str], month_weights, date_str
+                        financial_data_info, month_weights, date_str
                     )
                     if daily_result:
                         result_data.append(daily_result)

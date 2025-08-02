@@ -32,24 +32,35 @@ class CommonMapper:
         database_manager.disconnect()
         return result
 
+    def delete_by_condition(self, condition):
+        database_manager = DatabaseManager()
+        database_manager.connect()
+        result = database_manager.delete(self.table_name, condition)
+        database_manager.disconnect()
+
     def update_base_entity(self, base_entity, columns, condition_columns):
         database_manager = DatabaseManager()
         entity_dict = base_entity.to_dict()
-
         extracted_data = {}
         condition_parts = []
+
         for key in entity_dict.keys():
             if key in columns:
                 extracted_data[key] = nan_to_null(entity_dict[key])
+
             if key in condition_columns:
                 value = entity_dict[key]
+                # Check if the value is a string and wrap it with single quotes
+                if isinstance(value, str):
+                    value = f"'{value}'"
                 condition_part = f"{key}={value}"
                 condition_parts.append(condition_part)
-        condition_string = " and ".join(condition_parts)
 
+        condition_string = " and ".join(condition_parts)
         database_manager.connect()
         database_manager.update(self.table_name, extracted_data, condition_string)
         database_manager.disconnect()
+
 
 def nan_to_null(value):
     if np.isnan(value):

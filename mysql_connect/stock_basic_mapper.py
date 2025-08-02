@@ -85,9 +85,9 @@ class StockBasicMapper(CommonMapper):
 
     def get_active_stocks_in_date_range(self, start_date, end_date):
         """查询指定时间范围内处于上市状态的股票（在此期间已上市且未退市）"""
-        # 上市日期 <= end_date 且 (退市日期 >= start_date 或 退市日期为空)
-        condition = (f'list_date <= \'{end_date}\' and list_status = \'L\' and '
-                     f'(delist_date >= \'{start_date}\' or delist_date is null or delist_date = \'\')')
+        # 整个时段均上市
+        condition = (f'list_date <= \'{start_date}\' and '
+                     f'(delist_date >= \'{end_date}\' or delist_date is null or delist_date = \'\')')
         stock_data = self.select_base_entity(columns='*', condition=condition)
         return [self._convert_to_stock_basic(row) for row in stock_data] if stock_data else []
 

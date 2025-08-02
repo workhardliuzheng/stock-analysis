@@ -46,3 +46,6 @@ class StockBasic(BaseEntity):
 
     def set_id(self, id):
         self.id = id
+
+    def get_delist_date(self):
+        return self.delist_date
