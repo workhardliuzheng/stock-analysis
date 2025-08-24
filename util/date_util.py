@@ -48,3 +48,16 @@ class TimeUtils:
         new_date = date_obj + timedelta(days=days)
         # 返回格式化后的字符串
         return new_date.strftime(DATE_FORMAT)
+
+    @staticmethod
+    def get_last_day_of_previous_year(date_str):
+        # 将字符串转换为datetime对象
+        input_date = datetime.strptime(date_str, "%Y%m%d")
+
+        # 获取输入日期的年份
+        year = input_date.year
+
+        # 计算前一年的最后一天
+        last_day_of_previous_year = datetime(year - 1, 12, 31)
+
+        return last_day_of_previous_year

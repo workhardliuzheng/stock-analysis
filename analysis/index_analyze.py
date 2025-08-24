@@ -310,9 +310,12 @@ class StockAnalyzer:
         right_data1 = DataPltMetadata('pe_ttm_weight', 'pe_ttm_weight', 1, 'orange', linestyle='-')
         right_data2 = DataPltMetadata('pe_weight', 'pe_weight', 1, 'blue', linestyle='-')
         right_data3 = DataPltMetadata('pb_weight', 'pb_weight', 1, 'green', linestyle='-')
+        right_data4 = DataPltMetadata('pe_profit_dedt', 'pe_profit_dedt', 1, 'olive', linestyle='-')
+        right_data5 = DataPltMetadata('pe_profit_dedt_ttm', 'pe_profit_dedt_ttm', 1, 'pink', linestyle='-')
+
 
         left_plot_metadata_list = [left_data]
-        right_plot_metadata_list = [right_data1, right_data2, right_data3]
+        right_plot_metadata_list = [right_data1, right_data2, right_data3, right_data4, right_data5]
         file_path = constant.DEFAULT_FILE_PATH + 'pe加权\\'
         plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
                                     right_plot_metadata_list=right_plot_metadata_list, is_save_picture=False,

@@ -1,15 +1,22 @@
 # 这是一个示例 Python 脚本。
+import sync
 from analysis.fund_analyze import FundAnalyze
 from analysis.index_analyze import StockAnalyzer
 from entity import constant
 from sync import fund_data_sync as fds
 from sync.index.sixty_index_analysis import SixtyIndexAnalysis
 from sync.market_data import market_data_sync
-from sync.market_data.market_data_sync import additional_data
+from sync.market_data.market_data_sync import additional_data as sync_market_data
 from sync.index.sync_stock_weight import additional_data as sync_stock_weight
 from sync.index.sync_stock_weight import sync_stock_weight as sync_stock_weight_excect
+from sync.stock.sync_income import additional_data as sync_income
+from sync.stock.sync_financial_data import additional_data as sync_financial_data
+
+
 
 from sync.stock.sync_stock_basic import sync_all_stock_basic
+from sync.stock.sync_stock_daily_basic import sync_all_stock_basic_daily
+from util.date_util import TimeUtils
 
 # 按 ⌃R 执行或将其替换为您的代码。
 # 按 双击 ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。。
@@ -17,10 +24,18 @@ from sync.stock.sync_stock_basic import sync_all_stock_basic
 
 # 示例使用
 if __name__ == "__main__":
-    #for ts_code in constant.TS_CODE_LIST:
-        ana = StockAnalyzer('000016.SH')
-    #    ana.plot_index_pe_pb()
+    for ts_code in constant.TS_CODE_LIST:
+        ana = StockAnalyzer(ts_code)
+        ana.plot_index_pe_pb()
         ana.plot_index_pe_pb_weight()
+    #analys = sync.index.sixty_index_analysis.SixtyIndexAnalysis()
+    #analys.additional_data()
+
+    #sync_income()
+    #sync_financial_data()
+    #sync_all_stock_basic_daily()
+    #sync_income()
+    #sync_financial_data()
 
     #sync_stock_weight_excect('000016.SH', '20120101', '20220501')
 

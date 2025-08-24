@@ -59,7 +59,7 @@ class SixtyIndexAnalysis:
             else:
                 max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
-            self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
+            #self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
             self.additional_pe_data_and_update_mapper(ts_code, constant.PE_HISTORY_START_DATE_MAP[ts_code], TimeUtils.get_current_date_str())
 
 
@@ -125,7 +125,9 @@ class SixtyIndexAnalysis:
                                        pe_ttm_weight=0,
                                        pe_ttm=0,
                                        pb=0,
-                                       pe=0)
+                                       pe=0,
+                                       pe_profit_dedt=0,
+                                       pe_profit_dedt_ttm=0)
                 mapper.insert_index(stock_data)
                 this_loop_date = row.cal_date
 
@@ -172,11 +174,7 @@ class SixtyIndexAnalysis:
 
         print(f"找到 {len(stock_analysis['consistent_stocks'])} 只在整个期间都存在的股票")
 
-        # 3. 获取财务数据
-        self._get_financial_data_adaptive(pro, stock_analysis['consistent_stocks'], start_date,
-                                                           end_date)
-
-        # 4. 计算每日加权PE/PB和等权PE/PB
+        # 3. 计算每日加权PE/PB和等权PE/PB
         result_data = self._calculate_both_weighted_metrics(monthly_stock_info,
                                                             stock_analysis['consistent_stocks'],
                                                             start_date, end_date)
@@ -708,7 +706,9 @@ class SixtyIndexAnalysis:
             'valid_stocks_pe': weighted_metrics['valid_pe_count'],
             'valid_stocks_pe_ttm': weighted_metrics['valid_pe_ttm_count'],
             'valid_stocks_pb': weighted_metrics['valid_pb_count'],
-            'total_stocks': len(merged_df)
+            'total_stocks': len(merged_df),
+            'weighted_pe_dedt' : weighted_metrics['pe_dedt'],
+            'weighted_pe_ttm_dedt': weighted_metrics['pe_ttm_dedt']
         }
 
         return result
@@ -718,10 +718,14 @@ class SixtyIndexAnalysis:
         # 初始化累计值
         weighted_total_net_profit = 0
         weighted_total_net_profit_ttm = 0
+        weighted_total_net_profit_dedt = 0
+        weighted_total_net_profit_ttm_dedt = 0
         weighted_total_net_assets = 0
         weighted_total_circ_mv_pe = 0
         weighted_total_circ_mv_pe_ttm = 0
         weighted_total_circ_mv_pb = 0
+        weighted_total_circ_mv_pe_dedt = 0
+        weighted_total_circ_mv_pe_ttm_dedt = 0
 
         valid_pe_count = 0
         valid_pe_ttm_count = 0
@@ -753,6 +757,16 @@ class SixtyIndexAnalysis:
                 weighted_total_circ_mv_pb += circ_mv * weight
                 valid_pb_count += 1
 
+            # 计算扣非pe相关指标
+            if pd.notna(row['pe_profit_dedt']) and row['pe_profit_dedt'] > 0:
+                weighted_total_circ_mv_pe_dedt += circ_mv * weight
+                weighted_total_net_profit_dedt += circ_mv / row['pe_profit_dedt'] * weight
+
+            # 计算扣非pe_ttm相关指标
+            if pd.notna(row['pe_ttm_profit_dedt']) and row['pe_ttm_profit_dedt'] >0:
+                weighted_total_circ_mv_pe_ttm_dedt += circ_mv * weight
+                weighted_total_net_profit_ttm_dedt += circ_mv / row['pe_ttm_profit_dedt'] * weight
+
         # 计算最终的加权指标
         weighted_pe = (weighted_total_circ_mv_pe / weighted_total_net_profit
                        if weighted_total_net_profit > 0 else None)
@@ -760,11 +774,17 @@ class SixtyIndexAnalysis:
                            if weighted_total_net_profit_ttm > 0 else None)
         weighted_pb = (weighted_total_circ_mv_pb / weighted_total_net_assets
                        if weighted_total_net_assets > 0 else None)
+        weighted_pe_dedt = (weighted_total_circ_mv_pe_dedt / weighted_total_net_profit_dedt
+                            if weighted_total_net_profit_dedt >0 else None)
+        weighted_pe_ttm_dedt = (weighted_total_circ_mv_pe_ttm_dedt / weighted_total_net_profit_ttm_dedt
+                                if weighted_total_net_profit_ttm_dedt > 0 else None)
 
         return {
             'pe': weighted_pe,
             'pe_ttm': weighted_pe_ttm,
             'pb': weighted_pb,
+            'pe_dedt' : weighted_pe_dedt,
+            'pe_ttm_dedt' : weighted_pe_ttm_dedt,
             'valid_pe_count': valid_pe_count,
             'valid_pe_ttm_count': valid_pe_ttm_count,
             'valid_pb_count': valid_pb_count
@@ -784,6 +804,9 @@ class SixtyIndexAnalysis:
         if total_market_cap <= 0:
             return {'pe': None, 'pe_ttm': None, 'pb': None}
 
+        # 计算总流通市值
+        circ_market_cap = valid_data['circ_mv'].sum()
+
         # 初始化累计值
         mv_weighted_net_profit = 0
         mv_weighted_net_profit_ttm = 0
@@ -792,9 +815,16 @@ class SixtyIndexAnalysis:
         mv_weighted_total_mv_pe_ttm = 0
         mv_weighted_total_mv_pb = 0
 
+        weighted_total_net_profit_dedt = 0
+        weighted_total_net_profit_ttm_dedt = 0
+        weighted_total_circ_mv_pe_dedt = 0
+        weighted_total_circ_mv_pe_ttm_dedt = 0
+
         for _, row in valid_data.iterrows():
             total_mv = row['total_mv']
             mv_weight = total_mv / total_market_cap  # 市值权重
+            circ_mv = row['circ_mv']
+            circ_mv_weight = circ_mv / circ_market_cap
 
             # 计算PE相关指标
             if pd.notna(row['pe']) and row['pe'] > 0:
@@ -814,6 +844,16 @@ class SixtyIndexAnalysis:
                 mv_weighted_net_assets += net_assets * mv_weight
                 mv_weighted_total_mv_pb += total_mv * mv_weight
 
+            # 计算扣非pe相关指标
+            if pd.notna(row['pe_profit_dedt']) and row['pe_profit_dedt'] > 0:
+                weighted_total_circ_mv_pe_dedt += circ_mv * circ_mv_weight
+                weighted_total_net_profit_dedt += circ_mv / row['pe_profit_dedt'] * circ_mv_weight
+
+            # 计算扣非pe_ttm相关指标
+            if pd.notna(row['pe_ttm_profit_dedt']) and row['pe_ttm_profit_dedt'] > 0:
+                weighted_total_circ_mv_pe_ttm_dedt += circ_mv * circ_mv_weight
+                weighted_total_net_profit_ttm_dedt += circ_mv / row['pe_ttm_profit_dedt'] * circ_mv_weight
+
         # 计算最终的市值加权指标
         equal_weight_pe = (mv_weighted_total_mv_pe / mv_weighted_net_profit
                            if mv_weighted_net_profit > 0 else None)
@@ -821,11 +861,17 @@ class SixtyIndexAnalysis:
                                if mv_weighted_net_profit_ttm > 0 else None)
         equal_weight_pb = (mv_weighted_total_mv_pb / mv_weighted_net_assets
                            if mv_weighted_net_assets > 0 else None)
+        weighted_pe_dedt = (weighted_total_circ_mv_pe_dedt / weighted_total_net_profit_dedt
+                            if weighted_total_net_profit_dedt > 0 else None)
+        weighted_pe_ttm_dedt = (weighted_total_circ_mv_pe_ttm_dedt / weighted_total_net_profit_ttm_dedt
+                                if weighted_total_net_profit_ttm_dedt > 0 else None)
 
         return {
             'pe': equal_weight_pe,
             'pe_ttm': equal_weight_pe_ttm,
-            'pb': equal_weight_pb
+            'pb': equal_weight_pb,
+            'weighted_pe_dedt' : weighted_pe_dedt,
+            'weighted_pe_ttm_dedt' : weighted_pe_ttm_dedt
         }
 
     # 同时更新 additional_pe_data_and_update_mapper 方法
@@ -865,7 +911,9 @@ class SixtyIndexAnalysis:
                         # 市值权重等权指标
                         pb=float(row['equal_weight_pb']) if pd.notna(row['equal_weight_pb']) else None,
                         pe=float(row['equal_weight_pe']) if pd.notna(row['equal_weight_pe']) else None,
-                        pe_ttm=float(row['equal_weight_pe_ttm']) if pd.notna(row['equal_weight_pe_ttm']) else None
+                        pe_ttm=float(row['equal_weight_pe_ttm']) if pd.notna(row['equal_weight_pe_ttm']) else None,
+                        pe_profit_dedt=float(row['weighted_pe_dedt']) if pd.notna(row['weighted_pe_dedt']) else None,
+                        pe_profit_dedt_ttm=float(row['weighted_pe_ttm_dedt']) if pd.notna(row['weighted_pe_dedt']) else None
                     )
                     stock_data_list.append(stock_data)
                 except Exception as e:
@@ -878,7 +926,7 @@ class SixtyIndexAnalysis:
 
             # 分批更新
             total_updated = 0
-            update_fields = ['pb_weight', 'pe_weight', 'pe_ttm_weight', 'pb', 'pe', 'pe_ttm']
+            update_fields = ['pb_weight', 'pe_weight', 'pe_ttm_weight', 'pb', 'pe', 'pe_ttm', 'pe_profit_dedt', 'pe_profit_dedt_ttm']
 
             for i in range(0, len(stock_data_list), batch_size):
                 batch = stock_data_list[i:i + batch_size]

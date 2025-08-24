@@ -4,7 +4,8 @@ from util.class_util import ClassUtil
 
 class StockData(BaseEntity):
     def __init__(self, id, ts_code, trade_date, close, open, high, low, pre_close, change, pct_chg, vol, amount,
-                 average_date, average_amount, deviation_rate, name,pe_weight, pe_ttm_weight, pb_weight, pe, pb, pe_ttm):
+                 average_date, average_amount, deviation_rate, name,pe_weight, pe_ttm_weight, pb_weight, pe, pb, pe_ttm,
+                 pe_profit_dedt, pe_profit_dedt_ttm):
         self.id = id
         self.ts_code = ts_code
         self.trade_date = trade_date
@@ -27,6 +28,8 @@ class StockData(BaseEntity):
         self.pe = pe
         self.pb = pb
         self.pe_ttm = pe_ttm
+        self.pe_profit_dedt = pe_profit_dedt
+        self.pe_profit_dedt_ttm = pe_profit_dedt_ttm
 
     def get_trade_date(self):
         return self.trade_date

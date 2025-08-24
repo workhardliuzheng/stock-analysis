@@ -66,6 +66,12 @@ class StockDailyBasicMapper(CommonMapper):
         self.delete_by_condition(condition=condition)
         print(f'已删除交易日期为{trade_date}的所有数据')
 
+    def delete_by_ts_code(self, ts_code):
+        """根据交易日期删除数据"""
+        condition = f'ts_code = \'{ts_code}\''
+        self.delete_by_condition(condition=condition)
+        print(f'已删除交易日期为{ts_code}的所有数据')
+
     def select_by_trade_date(self, trade_date):
         """根据股票代码和交易日期查询"""
         condition = f'trade_date = \'{trade_date}\''

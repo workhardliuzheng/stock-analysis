@@ -118,7 +118,7 @@ class StockBasicMapper(CommonMapper):
         stock_data = self.select_base_entity(columns='*', condition=condition)
         return [self._convert_to_stock_basic(row) for row in stock_data] if stock_data else []
 
-    def get_all_ts_codes(self, list_status='L'):
+    def get_all_ts_codes(self, list_status=None):
         """获取所有股票的TS代码列表"""
         condition = f'list_status = \'{list_status}\'' if list_status else ''
         stock_data = self.select_base_entity(columns='ts_code', condition=condition)

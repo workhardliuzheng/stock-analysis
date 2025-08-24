@@ -6,7 +6,7 @@ class StockDailyBasic(BaseEntity):
                  turnover_rate=None, turnover_rate_f=None, volume_ratio=None,
                  pe=None, pe_ttm=None, pb=None, ps=None, ps_ttm=None,
                  dv_ratio=None, dv_ttm=None, total_share=None, float_share=None,
-                 free_share=None, total_mv=None, circ_mv=None):
+                 free_share=None, total_mv=None, circ_mv=None, pe_profit_dedt=None, pe_ttm_profit_dedt=None):
         self.id = id
         self.ts_code = ts_code
         self.trade_date = trade_date
@@ -26,6 +26,8 @@ class StockDailyBasic(BaseEntity):
         self.free_share = free_share
         self.total_mv = total_mv
         self.circ_mv = circ_mv
+        self.pe_profit_dedt = pe_profit_dedt
+        self.pe_ttm_profit_dedt = pe_ttm_profit_dedt
 
     # Getter方法
     def get_id(self):
@@ -142,3 +144,9 @@ class StockDailyBasic(BaseEntity):
 
     def set_circ_mv(self, circ_mv):
         self.circ_mv = circ_mv
+
+    def get_pe_profit_dedt(self):
+        return self.pe_profit_dedt
+
+    def get_pe_ttm_profit_dedt(self):
+        return self.pe_ttm_profit_dedt
