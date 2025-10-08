@@ -82,14 +82,15 @@ def _fetch_financial_data_batch(ts_code, start_date, end_date):
             pe_ttm_profit_dedt = None
 
             #获取上一年年终扣非净利润
-            last_day_of_previous_year = TimeUtils.get_last_day_of_previous_year(row['trade_date'])
-            filtered_data = financial_data_pd[financial_data_pd['end_date'] == TimeUtils.date_to_str(last_day_of_previous_year)]
-            if len(filtered_data) > 0 and 'profit_dedt' in filtered_data.columns and filtered_data['profit_dedt'] is not None:
-                pe_profit_dedt = row['circ_mv'] * 10000 / filtered_data['profit_dedt'].iloc[0]
+            if financial_data_pd is not None and not financial_data_pd.empty:
+                last_day_of_previous_year = TimeUtils.get_last_day_of_previous_year(row['trade_date'])
+                filtered_data = financial_data_pd[financial_data_pd['end_date'] == TimeUtils.date_to_str(last_day_of_previous_year)]
+                if len(filtered_data) > 0 and 'profit_dedt' in filtered_data.columns and filtered_data['profit_dedt'] is not None:
+                    pe_profit_dedt = row['circ_mv'] * 10000 / filtered_data['profit_dedt'].iloc[0]
 
-            profit_dedt_ttm = _get_profit_dedt_ttm(financial_data_pd, row['trade_date'])
-            if profit_dedt_ttm is not None:
-                pe_ttm_profit_dedt = row['circ_mv'] * 10000 / profit_dedt_ttm
+                profit_dedt_ttm = _get_profit_dedt_ttm(financial_data_pd, row['trade_date'])
+                if profit_dedt_ttm is not None:
+                    pe_ttm_profit_dedt = row['circ_mv'] * 10000 / profit_dedt_ttm
 
             # 创建每日基础数据对象（这里需要根据你的实体类调整）
             daily_data = StockDailyBasic(id=None,

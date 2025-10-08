@@ -46,7 +46,7 @@ class SixtyIndexAnalysis:
             self.init_sixty_index_average_value(ts_code, TimeUtils.get_current_date_str(), TimeUtils.get_current_date_str())
 
     # 自动同步数据
-    def additional_data(self):
+    def additional_data(self, pe_cal_start_date):
         # 同步权重
         #additional_data()
         # 同步指数价值
@@ -59,8 +59,8 @@ class SixtyIndexAnalysis:
             else:
                 max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
-            #self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
-            self.additional_pe_data_and_update_mapper(ts_code, constant.PE_HISTORY_START_DATE_MAP[ts_code], TimeUtils.get_current_date_str())
+            self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
+            self.additional_pe_data_and_update_mapper(ts_code, pe_cal_start_date, TimeUtils.get_current_date_str())
 
 
 
@@ -153,36 +153,33 @@ class SixtyIndexAnalysis:
             f"开始计算指数 {index_code} 从 {start_date.strftime('%Y-%m-%d')} 到 {end_date.strftime('%Y-%m-%d')} 的PE/PB")
 
         # 1. 获取所有月份的成分股权重数据
-        monthly_stock_info = self._get_monthly_stock_weights(index_code, start_date, end_date)
+        con_code_list = self._get_all_con_codes(index_code, start_date, end_date)
 
-        if not monthly_stock_info:
+        monthly_stock_info = self._get_monthly_stock_weights(index_code, con_code_list, start_date, end_date)
+
+        if monthly_stock_info.empty:
             print("未找到任何成分股权重数据")
             return pd.DataFrame(columns=[
                 'trade_date', 'weighted_pe', 'weighted_pe_ttm', 'weighted_pb',
                 'equal_weight_pe', 'equal_weight_pe_ttm', 'equal_weight_pb'
             ])
-
-        # 2. 分析股票在整个期间的存在情况
-        stock_analysis = self._analyze_stock_existence(monthly_stock_info, start_date, end_date)
-
-        if not stock_analysis['consistent_stocks']:
-            print("未找到在整个期间都存在的股票")
-            return pd.DataFrame(columns=[
-                'trade_date', 'weighted_pe', 'weighted_pe_ttm', 'weighted_pb',
-                'equal_weight_pe', 'equal_weight_pe_ttm', 'equal_weight_pb'
-            ])
-
-        print(f"找到 {len(stock_analysis['consistent_stocks'])} 只在整个期间都存在的股票")
+        print(f"找到 {len(con_code_list)} 只在整个期间都存在的股票")
 
         # 3. 计算每日加权PE/PB和等权PE/PB
         result_data = self._calculate_both_weighted_metrics(monthly_stock_info,
-                                                            stock_analysis['consistent_stocks'],
+                                                            con_code_list,
                                                             start_date, end_date)
 
         print(f"计算完成，共生成 {len(result_data)} 条记录")
         return pd.DataFrame(result_data)
 
-    def _get_monthly_stock_weights(self, index_code, start_date, end_date):
+    def _get_all_con_codes(self, index_code, start_date, end_date):
+        start_date = TimeUtils.date_to_str(start_date)
+        end_date = TimeUtils.date_to_str(end_date)
+        return stock_weight_mapper.get_exist_con_code(index_code=index_code,
+                                                      start_date=start_date, end_date=end_date)
+
+    def _get_monthly_stock_weights(self, index_code, con_code_list, start_date, end_date):
         """
         获取每个月的成分股权重数据，结合股票基础信息过滤已上市且未退市的公司
 
@@ -192,86 +189,26 @@ class SixtyIndexAnalysis:
             end_date: 结束日期 (datetime对象)
 
         Returns:
-            dict: 每个月的成分股权重数据
+            最新月的权重书籍
         """
-        monthly_stock_info = {}
 
-        # 1. 获取在整个时间段内处于上市状态的股票列表
-        active_stocks = self._get_active_stocks_in_period(start_date, end_date)
-        if not active_stocks:
-            print("在指定时间段内未找到处于上市状态的股票")
-            return monthly_stock_info
+        start_date=TimeUtils.date_to_str(start_date)
+        end_date=TimeUtils.date_to_str(end_date)
 
-        # 构建活跃股票代码集合和基础信息映射
-        active_ts_codes = set()
-        stock_basic_map = {}
+        if not con_code_list:
+            return None
 
-        for stock in active_stocks:
-            ts_code = stock.ts_code
-            active_ts_codes.add(ts_code)
-            stock_basic_map[ts_code] = {
-                'stock_name': stock.name,
-                'area': stock.area,
-                'industry': stock.industry,
-                'list_date': stock.list_date,
-                'delist_date': stock.delist_date,
-                'list_status': stock.list_status
-            }
+        data = stock_weight_mapper.get_newest_weight_by_con_code_list(index_code=index_code, con_code_list=con_code_list,
+                                                               start_date=start_date, end_date=end_date)
+        if not data:
+            return None
 
-        print(f"在时间段 {start_date.strftime('%Y-%m-%d')} 到 {end_date.strftime('%Y-%m-%d')} 内，"
-              f"共找到 {len(active_ts_codes)} 只处于上市状态的股票")
+        weight_list = []
+        for row in data:
+            weight = ClassUtil.create_entities_from_data(StockWeight, row)
+            weight_list.append(weight.to_dict())
 
-        current_month_start = start_date
-        while current_month_start <= end_date:
-            # 计算当前月份的结束日期
-            next_month_start = (current_month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
-            current_month_end = next_month_start - timedelta(days=1)
-
-            try:
-                # 获取当前月份的指数成分股及其权重
-                stock_weights = stock_weight_mapper.select_by_code_and_trade_round(
-                    index_code=index_code,
-                    start_date=current_month_start.strftime('%Y%m%d'),
-                    end_date=current_month_end.strftime('%Y%m%d')
-                )
-
-                if stock_weights:
-                    stock_info = []
-                    filtered_count = 0
-                    total_count = 0
-
-                    for row in stock_weights:
-                        total_count += 1
-                        stock_data = ClassUtil.create_entities_from_data(StockWeight, row)
-                        con_code = stock_data.get_con_code()
-
-                        # 只保留在时间段内处于上市状态的股票
-                        if con_code in active_ts_codes:
-                            stock_dict = stock_data.to_dict()
-                            # 添加股票基础信息
-                            stock_dict.update(stock_basic_map[con_code])
-                            stock_info.append(stock_dict)
-                            filtered_count += 1
-
-                    if stock_info:
-                        stock_df = pd.DataFrame(stock_info)
-                        # 去重并存储，保留权重最大的记录
-                        month_stock_info = stock_df.loc[stock_df.groupby('con_code')['weight'].idxmax()]
-                        monthly_stock_info[current_month_start] = month_stock_info
-                        print(f"月份 {current_month_start.strftime('%Y-%m')}: "
-                              f"原始成分股 {total_count} 只，过滤后 {filtered_count} 只，"
-                              f"去重后 {len(month_stock_info)} 只")
-                    else:
-                        print(f"月份 {current_month_start.strftime('%Y-%m')}: "
-                              f"原始成分股 {total_count} 只，过滤后无有效股票")
-
-            except Exception as e:
-                print(f"获取月份 {current_month_start.strftime('%Y-%m')} 数据失败: {e}")
-
-            # 移动到下一个月
-            current_month_start = next_month_start
-
-        return monthly_stock_info
+        return pd.DataFrame(weight_list)
 
     def _get_active_stocks_in_period(self, start_date, end_date):
         """
@@ -615,6 +552,9 @@ class SixtyIndexAnalysis:
         """计算加权PE/PB和等权PE/PB指标"""
         result_data = []
 
+        if monthly_stock_info is None or monthly_stock_info.empty:
+            return result_data
+
         current_month_start = start_date
         while current_month_start <= end_date:
             # 计算当前月份的结束日期
@@ -625,30 +565,11 @@ class SixtyIndexAnalysis:
             if current_month_end > end_date:
                 current_month_end = end_date
 
-            # 获取当前月份的权重数据
-            month_weights = None
-            temp_month_start = current_month_start
-            while temp_month_start >= start_date and month_weights is None:
-                if temp_month_start in monthly_stock_info:
-                    month_weights = monthly_stock_info[temp_month_start]
-                    # 只保留一致存在的股票
-                    month_weights = month_weights[month_weights['con_code'].isin(consistent_stocks)]
-                    if month_weights.empty:
-                        month_weights = None  # 如果过滤后为空，则继续往前找
-                else:
-                    month_weights = None
-                # 移动到上一个月
-                temp_month_start = (temp_month_start.replace(day=1) - timedelta(days=1)).replace(day=1)
-
-            if month_weights is None:
-                current_month_start = next_month_start
-                continue
-
             # 计算当前月份每天的加权指标
             current_date = current_month_start
             while current_date <= current_month_end:
                 date_str = current_date.strftime('%Y%m%d')
-                financial_data = stock_daily_basic_mapper.select_by_trade_date(date_str)
+                financial_data = stock_daily_basic_mapper.select_by_trade_date_and_ts_code(date_str, consistent_stocks)
 
                 financial_data_info = []
                 for row in financial_data:
@@ -657,7 +578,7 @@ class SixtyIndexAnalysis:
 
                 if financial_data:
                     daily_result = self._calculate_daily_both_metrics(
-                        financial_data_info, month_weights, date_str
+                        financial_data_info, monthly_stock_info, date_str
                     )
                     if daily_result:
                         result_data.append(daily_result)
@@ -742,11 +663,17 @@ class SixtyIndexAnalysis:
                 weighted_total_net_profit += net_profit * weight
                 weighted_total_circ_mv_pe += circ_mv * weight
                 valid_pe_count += 1
+            else:
+                weighted_total_circ_mv_pe += circ_mv * weight
+                valid_pe_count += 1
 
             # 计算PE_TTM相关指标
             if pd.notna(row['pe_ttm']) and row['pe_ttm'] > 0:
                 net_profit_ttm = total_mv / row['pe_ttm']
                 weighted_total_net_profit_ttm += net_profit_ttm * weight
+                weighted_total_circ_mv_pe_ttm += circ_mv * weight
+                valid_pe_ttm_count += 1
+            else:
                 weighted_total_circ_mv_pe_ttm += circ_mv * weight
                 valid_pe_ttm_count += 1
 
@@ -756,16 +683,23 @@ class SixtyIndexAnalysis:
                 weighted_total_net_assets += net_assets * weight
                 weighted_total_circ_mv_pb += circ_mv * weight
                 valid_pb_count += 1
+            else:
+                weighted_total_circ_mv_pb += circ_mv * weight
+                valid_pb_count += 1
 
             # 计算扣非pe相关指标
             if pd.notna(row['pe_profit_dedt']) and row['pe_profit_dedt'] > 0:
                 weighted_total_circ_mv_pe_dedt += circ_mv * weight
                 weighted_total_net_profit_dedt += circ_mv / row['pe_profit_dedt'] * weight
+            else:
+                weighted_total_circ_mv_pe_dedt += circ_mv * weight
 
             # 计算扣非pe_ttm相关指标
             if pd.notna(row['pe_ttm_profit_dedt']) and row['pe_ttm_profit_dedt'] >0:
                 weighted_total_circ_mv_pe_ttm_dedt += circ_mv * weight
                 weighted_total_net_profit_ttm_dedt += circ_mv / row['pe_ttm_profit_dedt'] * weight
+            else:
+                weighted_total_circ_mv_pe_ttm_dedt += circ_mv * weight
 
         # 计算最终的加权指标
         weighted_pe = (weighted_total_circ_mv_pe / weighted_total_net_profit
@@ -880,11 +814,11 @@ class SixtyIndexAnalysis:
         获取指数PE/PB数据并批量更新到数据库（包含等权指标）
         """
         try:
-            print(f"开始获取指数 {index_code} 的PE/PB数据...")
+            print(f"开始获取指数 {constant.TS_CODE_NAME_DICT[index_code]} 的PE/PB数据...")
             value = self.get_index_pe_pb(index_code=index_code, start_date=start_date, end_date=end_date)
 
             if value.empty:
-                print(f"指数 {index_code} 在 {start_date}-{end_date} 期间无PE/PB数据")
+                print(f"指数 {constant.TS_CODE_NAME_DICT[index_code]} 在 {start_date}-{end_date} 期间无PE/PB数据")
                 return
 
             print(f"获取到 {len(value)} 条PE/PB数据，开始批量更新...")

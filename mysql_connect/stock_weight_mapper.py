@@ -75,3 +75,33 @@ class StockWeightMapper(CommonMapper):
         # 执行查询
         sixty_index = self.select_base_entity(columns='MAX(trade_date)', condition=query)
         return sixty_index[0][0]
+
+    def get_exist_con_code(self, index_code, start_date, end_date):
+        """
+        根据最新的权重获取在这个区间内均存在的股票
+        """
+        new_trade_date = self.get_max_trade_time(index_code=index_code)
+
+        sql = f"""
+            SELECT con_code
+            FROM stock_weight
+            WHERE index_code = '{index_code}'
+              AND trade_date = '{new_trade_date}'
+              AND con_code IN (
+                SELECT ts_code 
+                FROM stock_basic 
+                WHERE list_date <= '{start_date}'  
+                  AND (delist_date IS NULL OR delist_date > '{end_date}')
+              );
+            """
+        result = self.execute_sql(sql)
+        return [row[0] for row in result]
+
+    def get_newest_weight_by_con_code_list(self, index_code, con_code_list, start_date, end_date):
+        # 将列表转换为逗号分隔的字符串
+        placeholders = ', '.join(f'\'{code}\'' for code in con_code_list)
+        new_trade_date = self.get_max_trade_time(index_code=index_code)
+        # 构建 SQL 查询以获取 con_code
+        query = (f"con_code IN ({placeholders}) and trade_date = \'{new_trade_date}\' "
+                 f"and index_code=\'{index_code}\'")
+        return self.select_base_entity(columns='*', condition=query)

@@ -23,8 +23,7 @@ mapper = SixtyIndexMapper()
 
 
 class StockAnalyzer:
-    def __init__(self, ts_code):
-        start_date = constant.HISTORY_START_DATE_MAP[ts_code]
+    def __init__(self, ts_code, start_date):
         end_date = TimeUtils.get_current_date_str()
 
         index_data = mapper.select_by_code_and_trade_round(ts_code, start_date, end_date)
@@ -36,303 +35,115 @@ class StockAnalyzer:
 
         self.data = pd.DataFrame(data_frame_list)
         self.name = constant.TS_CODE_NAME_DICT[ts_code]
+        self.ts_code = ts_code
 
-    """分析偏离率分布"""
-    def _analyze_deviation_distribution(self):
+    def plot_all_zhishu(self, is_save_picture):
+        columns = None
+        if self.ts_code == '399001.SZ':
+            columns = ['pe_ttm_weight', 'pe_weight', 'pb_weight', 'pe_profit_dedt', 'pe_profit_dedt_ttm', 'pe_ttm',
+                   'pe', 'pb']
+        elif self.ts_code == '399006.SZ':
+            columns = ['pe_ttm_weight', 'pb']
+        elif self.ts_code == '000001.SH':
+            columns = ['pe']
+        elif self.ts_code == '000300.SH':
+            columns = ['pe_ttm_weight', 'pe_weight', 'pb_weight', 'pe_profit_dedt', 'pe_profit_dedt_ttm', 'pe_ttm',
+                   'pe', 'pb']
+        elif self.ts_code == '000688.SH':
+            columns = ['pb']
+        elif self.ts_code == '000852.SH':
+            columns = ['pb_weight']
+        elif self.ts_code == '000905.SH':
+            columns = ['pb_weight']
+        elif self.ts_code == '000016.SH':
+            columns = ['pb_weight']
+        if columns is None:
+            return
 
-        deviation_rates = self.data['deviation_rate'].dropna()
+        print(f"=================={self.name}数据 =====================")
+        for column in columns:
+            self._plot(column, column, is_save_picture, '财务加权')
 
-        # 统计分布
-        stats = {
-            '总样本数': len(deviation_rates),
-            '平均偏离率': deviation_rates.mean(),
-            '标准差': deviation_rates.std(),
-            '最大偏离率': deviation_rates.max(),
-            '最小偏离率': deviation_rates.min(),
-            '中位数': deviation_rates.median()
-        }
+        # 偏移率
+        self._plot('deviation_rate', 'deviation_rate', True, '60日线偏移度')
 
-        # 分区间统计
-        bins = [-float('inf'), -10, -5, -2, 0, 2, 5, 10, float('inf')]
-        labels = ['<-10%', '-10%~-5%', '-5%~-2%', '-2%~0%', '0%~2%', '2%~5%', '5%~10%', '>10%']
+        #成交量
+        self._plot('amount', 'amount', True, '成交量')
+        print()
 
-        self.data['deviation_range'] = pd.cut(self.data['deviation_rate'], bins=bins, labels=labels)
-        distribution = self.data['deviation_range'].value_counts().sort_index()
 
-        print("=== 60日线偏离率分布统计 ===")
-        for key, value in stats.items():
-            if isinstance(value, float):
-                print(f"{key}: {value:.4f}")
-            else:
-                print(f"{key}: {value}")
+    def _plot(self, column, label, is_save_picture, dir_name):
+        data = self.data
+        left_data = DataPltMetadata('close', '收盘价', 1, 'red', linestyle='-')
+        right_data = DataPltMetadata(column, label, 1, 'blue', linestyle='-')
+        left_plot_metadata_list = [left_data]
+        right_plot_metadata_list = [right_data]
 
-        print("\n=== 偏离率区间分布 ===")
-        for range_name, count in distribution.items():
-            percentage = count / len(deviation_rates) * 100
-            print(f"{range_name}: {count}次 ({percentage:.2f}%)")
+        # 直接获取 trade_date 最大的那行的 pe 值
+        max_pe_value = data.loc[data['trade_date'].idxmax(), column]
+        percent = self._calculate_percentile(column, max_pe_value)
+        print(f"{self.name}的{column}处于整体的: {percent}")
 
-        return stats, distribution
 
-    """分析不同偏离率下的未来走势"""
-    def _analyze_future_trend(self, future_days=[5, 10, 20]):
+        file_path = constant.DEFAULT_FILE_PATH + dir_name +'\\'
+        name = f"{self.name}与{column}"
+        plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
+                                    right_plot_metadata_list=right_plot_metadata_list, is_save_picture=is_save_picture,
+                                    title=name, file_path=file_path)
 
-        results = {}
-        for days in future_days:
-            print(f"\n=== {days}日后走势分析 ===")
+    def _calculate_percentile(self, column_name, value):
+        data = self.data.copy()
+        """
+        计算某个值在DataFrame指定列中的百分位
 
-            # 计算未来收益率
-            future_returns = []
-            deviation_ranges = []
+        参数:
+        df: pandas DataFrame
+        column_name: str, 列名
+        value: 要计算百分位的值
 
-            for ts_code in self.data['ts_code'].unique():
-                stock_data = self.data[self.data['ts_code'] == ts_code].copy()
-                stock_data = stock_data.sort_values('trade_date').reset_index(drop=True)
+        返回:
+        float: 百分位值(0-100之间)
+        """
 
-                for i in range(len(stock_data) - days):
-                    current_price = stock_data.iloc[i]['close']
-                    future_price = stock_data.iloc[i + days]['close']
-                    current_deviation = stock_data.iloc[i]['deviation_rate']
+        # 获取列数据并移除NaN值
+        data['Rank'] = data[column_name].rank(method='min')
 
-                    if pd.notna(current_deviation) and pd.notna(future_price):
-                        future_return = (future_price - current_price) / current_price * 100
-                        future_returns.append(future_return)
-                        deviation_ranges.append(current_deviation)
+        # 计算总行数
+        total_rows = len(data)
 
-            # 创建分析数据框
-            analysis_df = pd.DataFrame({
-                'deviation_rate': deviation_ranges,
-                'future_return': future_returns
-            })
+        # 计算百分位数
+        return (data[data[column_name] == value]['Rank'].iloc[0] - 1) / (total_rows - 1) * 100
 
-            # 按偏离率分组分析
-            bins = [-float('inf'), -10, -5, -2, 0, 2, 5, 10, float('inf')]
-            labels = ['<-10%', '-10%~-5%', '-5%~-2%', '-2%~0%', '0%~2%', '2%~5%', '5%~10%', '>10%']
+    def plot_percentiles(self, column_name):
+        data = self.data
 
-            analysis_df['deviation_range'] = pd.cut(analysis_df['deviation_rate'], bins=bins, labels=labels)
+        data.sort_values(by=column_name, inplace=True)
+        percentile_30_index = int(len(data) * 0.2)
 
-            # 统计各区间的未来收益
-            range_analysis = analysis_df.groupby('deviation_range', observed=False)['future_return'].agg([
-                'count', 'mean', 'std', 'min', 'max',
-                lambda x: (x > 0).sum() / len(x) * 100  # 上涨概率
-            ]).round(4)
-            range_analysis.columns = ['样本数', '平均收益率%', '收益率标准差', '最小收益率%', '最大收益率%',
-                                      '上涨概率%']
+        top_30_percentile = data.head(percentile_30_index)
+        bottom_70_percentile = data.tail(int(len(data) * 0.2))
 
-            print(range_analysis)
-            results[f'{days}days'] = range_analysis
+        # Reset index to align with original dataframe
+        top_30_percentile.reset_index(drop=True, inplace=True)
+        bottom_70_percentile.reset_index(drop=True, inplace=True)
 
-        return results
+        # Plot all data points
+        plt.figure(figsize=(14, 7))
+        plt.plot(data['trade_date'], data[column_name], label='All Data', color='blue', alpha=0.5)
 
-    """寻找反转点和稳定区间"""
-    def _find_reversal_points(self, extreme_threshold=5):
-        print(f"\n=== 反转点分析（极值阈值: ±{extreme_threshold}%）===")
+        # Highlight top 30%
+        plt.scatter(top_30_percentile['trade_date'], top_30_percentile[column_name], label='Top 30%', color='red', s=50,
+                    zorder=5)
 
-        reversal_analysis = []
+        # Highlight bottom 70%
+        plt.scatter(bottom_70_percentile['trade_date'], bottom_70_percentile[column_name], label='Bottom 70%',
+                    color='red', s=50, zorder=5)
 
-        for ts_code in self.data['ts_code'].unique():
-            stock_data = self.data[self.data['ts_code'] == ts_code].copy()
-            stock_data = stock_data.sort_values('trade_date').reset_index(drop=True)
-
-            # 寻找极值点
-            for i in range(1, len(stock_data) - 20):  # 至少需要20天后续数据
-                current_deviation = stock_data.iloc[i]['deviation_rate']
-
-                if pd.isna(current_deviation):
-                    continue
-
-                # 判断是否为极值点
-                if abs(current_deviation) >= extreme_threshold:
-                    # 寻找后续稳定点
-                    for j in range(i + 1, min(i + 61, len(stock_data))):  # 最多看60天
-                        future_deviation = stock_data.iloc[j]['deviation_rate']
-
-                        if pd.notna(future_deviation) and abs(future_deviation) <= 2:  # 稳定在±2%以内
-                            days_to_stable = j - i
-                            price_change = (stock_data.iloc[j]['close'] - stock_data.iloc[i]['close']) / \
-                                           stock_data.iloc[i]['close'] * 100
-
-                            reversal_analysis.append({
-                                'start_date': stock_data.iloc[i]['trade_date'],
-                                'start_deviation': current_deviation,
-                                'stable_date': stock_data.iloc[j]['trade_date'],
-                                'stable_deviation': future_deviation,
-                                'days_to_stable': days_to_stable,
-                                'price_change_pct': price_change,
-                                'direction': 'up' if price_change > 0 else 'down'
-                            })
-                            break
-
-        if reversal_analysis:
-            reversal_df = pd.DataFrame(reversal_analysis)
-
-            # 按起始偏离率分组统计
-            positive_reversals = reversal_df[reversal_df['start_deviation'] > extreme_threshold]
-            negative_reversals = reversal_df[reversal_df['start_deviation'] < -extreme_threshold]
-
-            print(f"正偏离反转分析（偏离率>{extreme_threshold}%）:")
-            if len(positive_reversals) > 0:
-                print(f"  样本数: {len(positive_reversals)}")
-                print(f"  平均稳定天数: {positive_reversals['days_to_stable'].mean():.1f}天")
-                print(f"  平均价格变化: {positive_reversals['price_change_pct'].mean():.2f}%")
-                print(
-                    f"  下跌概率: {(positive_reversals['direction'] == 'down').sum() / len(positive_reversals) * 100:.1f}%")
-
-            print(f"\n负偏离反转分析（偏离率<-{extreme_threshold}%）:")
-            if len(negative_reversals) > 0:
-                print(f"  样本数: {len(negative_reversals)}")
-                print(f"  平均稳定天数: {negative_reversals['days_to_stable'].mean():.1f}天")
-                print(f"  平均价格变化: {negative_reversals['price_change_pct'].mean():.2f}%")
-                print(
-                    f"  上涨概率: {(negative_reversals['direction'] == 'up').sum() / len(negative_reversals) * 100:.1f}%")
-
-            return reversal_df
-        else:
-            print("未找到符合条件的反转点")
-            return None
-
-    """绘制分析图表"""
-    def _plot_analysis(self):
-
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle('股票60日线偏离率分析', fontsize=16)
-
-        # 1. 价格和60日均线走势
-        sample_data = self.data[self.data['ts_code'] == self.data['ts_code'].iloc[0]].copy()
-        sample_data = sample_data.sort_values('trade_date')
-
-        axes[0, 0].plot(sample_data['trade_date'], sample_data['close'], label='收盘价', linewidth=1)
-        axes[0, 0].plot(sample_data['trade_date'], sample_data['average_amount'], label='60日均线', linewidth=2)
-        axes[0, 0].set_title('价格走势与60日均线')
-        axes[0, 0].legend()
-        axes[0, 0].tick_params(axis='x', rotation=45)
-
-        # 2. 偏离率时间序列
-        axes[0, 1].plot(sample_data['trade_date'], sample_data['deviation_rate'], color='red', linewidth=1)
-        axes[0, 1].axhline(y=0, color='black', linestyle='--', alpha=0.5)
-        axes[0, 1].axhline(y=5, color='red', linestyle='--', alpha=0.5)
-        axes[0, 1].axhline(y=-5, color='green', linestyle='--', alpha=0.5)
-        axes[0, 1].set_title('60日线偏离率时间序列')
-        axes[0, 1].set_ylabel('偏离率 (%)')
-        axes[0, 1].tick_params(axis='x', rotation=45)
-
-        # 3. 偏离率分布直方图
-        deviation_rates = self.data['deviation_rate'].dropna()
-        axes[1, 0].hist(deviation_rates, bins=50, alpha=0.7, color='skyblue', edgecolor='black')
-        axes[1, 0].axvline(x=0, color='red', linestyle='--', alpha=0.7)
-        axes[1, 0].set_title('偏离率分布直方图')
-        axes[1, 0].set_xlabel('偏离率 (%)')
-        axes[1, 0].set_ylabel('频次')
-
-        # 4. 偏离率与未来收益散点图
-        future_returns = []
-        current_deviations = []
-
-        for ts_code in self.data['ts_code'].unique():
-            stock_data = self.data[self.data['ts_code'] == ts_code].copy()
-            stock_data = stock_data.sort_values('trade_date').reset_index(drop=True)
-
-            for i in range(len(stock_data) - 10):
-                current_price = stock_data.iloc[i]['close']
-                future_price = stock_data.iloc[i + 10]['close']
-                current_deviation = stock_data.iloc[i]['deviation_rate']
-
-                if pd.notna(current_deviation) and pd.notna(future_price):
-                    future_return = (future_price - current_price) / current_price * 100
-                    future_returns.append(future_return)
-                    current_deviations.append(current_deviation)
-
-        axes[1, 1].scatter(current_deviations, future_returns, alpha=0.5, s=10)
-        axes[1, 1].axhline(y=0, color='red', linestyle='--', alpha=0.7)
-        axes[1, 1].axvline(x=0, color='red', linestyle='--', alpha=0.7)
-        axes[1, 1].set_title('当前偏离率 vs 10日后收益率')
-        axes[1, 1].set_xlabel('当前偏离率 (%)')
-        axes[1, 1].set_ylabel('10日后收益率 (%)')
-
+        plt.title(column_name)
+        plt.xlabel('Trade Date')
+        plt.ylabel(column_name)
+        plt.legend()
+        plt.grid(True)
+        plt.xticks(rotation=45)
         plt.tight_layout()
-        plt.savefig('stock_analysis.png', dpi=300, bbox_inches='tight')
         plt.show()
-
-
-    # 收盘价与成交量的关系
-    def _plot_close_value_and_amount(self, ts_code):
-
-        # 将字典列表转换为 DataFrame
-        data_of_df = self.data
-        name = constant.TS_CODE_NAME_DICT[ts_code]
-        plot_dual_y_axis_line_chart(data_of_df, 'trade_date', 'close', 'amount', '收盘价', '成交量',
-                                    y1_scale_factor=1, y2_scale_factor=100000,title=name + '收盘价与成交量图')
-
-    # 收盘价与60日线关系
-    def _plot_close_value_and_sixty_average_amount(self, ts_code):
-        # 将字典列表转换为 DataFrame
-        data_of_df = self.data
-        name = constant.TS_CODE_NAME_DICT[ts_code]
-        plot_dual_y_axis_line_chart(data_of_df, 'trade_date', 'close', 'average_amount', '收盘价', '60日均线',
-                                    y1_scale_factor=1, y2_scale_factor=1,title=name + '收盘价与60日均线图', same_lim=True)
-
-
-    def all_analysis(self):
-        """主函数"""
-        print("=== 股票60日线偏离率分析系统 ===\n")
-
-        # 分析偏离率分布
-        stats, distribution = self._analyze_deviation_distribution()
-
-        # 分析未来走势
-        future_analysis = self._analyze_future_trend([5, 10, 20])
-
-        # 寻找反转点
-        reversal_points = self._find_reversal_points(extreme_threshold=5)
-
-        # 绘制分析图表
-        self._plot_analysis()
-
-        print("\n=== 分析完成 ===")
-        print("图表已保存为 stock_analysis.png")
-
-        # 输出关键结论
-        print("\n=== 关键结论 ===")
-        deviation_rates = self.data['deviation_rate'].dropna()
-        print(f"1. 偏离率主要分布在 ±{deviation_rates.std():.2f}% 范围内")
-        print(
-            f"2. 极端偏离率（>5%或<-5%）出现概率约为 {((abs(deviation_rates) > 5).sum() / len(deviation_rates) * 100):.1f}%")
-
-        if reversal_points is not None and len(reversal_points) > 0:
-            avg_days = reversal_points['days_to_stable'].mean()
-            print(f"3. 极端偏离后平均 {avg_days:.1f} 天回归稳定区间")
-
-    def plot_index_pe_pb_weight(self):
-        data = self.data
-        # 计算收盘价与20日线的偏离度（百分比）
-
-        left_data = DataPltMetadata('close', '收盘价', 1, 'red', linestyle='-')
-
-        right_data1 = DataPltMetadata('pe_ttm_weight', 'pe_ttm_weight', 1, 'orange', linestyle='-')
-        right_data2 = DataPltMetadata('pe_weight', 'pe_weight', 1, 'blue', linestyle='-')
-        right_data3 = DataPltMetadata('pb_weight', 'pb_weight', 1, 'green', linestyle='-')
-        right_data4 = DataPltMetadata('pe_profit_dedt', 'pe_profit_dedt', 1, 'olive', linestyle='-')
-        right_data5 = DataPltMetadata('pe_profit_dedt_ttm', 'pe_profit_dedt_ttm', 1, 'pink', linestyle='-')
-
-
-        left_plot_metadata_list = [left_data]
-        right_plot_metadata_list = [right_data1, right_data2, right_data3, right_data4, right_data5]
-        file_path = constant.DEFAULT_FILE_PATH + 'pe加权\\'
-        plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
-                                    right_plot_metadata_list=right_plot_metadata_list, is_save_picture=False,
-                                    title=self.name, file_path=file_path)
-    def plot_index_pe_pb(self):
-        data = self.data
-        # 计算收盘价与20日线的偏离度（百分比）
-
-        left_data = DataPltMetadata('close', '收盘价', 1, 'red', linestyle='-')
-
-        right_data1 = DataPltMetadata('pe_ttm', 'pe_ttm', 1, 'orange', linestyle='-')
-        right_data2 = DataPltMetadata('pe', 'pe', 1, 'blue', linestyle='-')
-        right_data3 = DataPltMetadata('pb', 'pb', 1, 'green', linestyle='-')
-
-        left_plot_metadata_list = [left_data]
-        right_plot_metadata_list = [right_data1, right_data2, right_data3]
-        file_path = constant.DEFAULT_FILE_PATH + 'pe未加权\\'
-        plot_dual_y_axis_line_chart(data, x_column='trade_date', left_plot_metadata_list=left_plot_metadata_list,
-                                    right_plot_metadata_list=right_plot_metadata_list, is_save_picture=False,
-                                    title=self.name, file_path=file_path)

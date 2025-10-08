@@ -61,6 +61,12 @@ class CommonMapper:
         database_manager.update(self.table_name, extracted_data, condition_string)
         database_manager.disconnect()
 
+    def execute_sql(self, sql):
+        database_manager = DatabaseManager()
+        database_manager.connect()
+        result = database_manager.execute_sql(sql)
+        database_manager.disconnect()
+        return result
 
 def nan_to_null(value):
     if np.isnan(value):

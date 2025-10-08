@@ -11,6 +11,7 @@ from sync.index.sync_stock_weight import additional_data as sync_stock_weight
 from sync.index.sync_stock_weight import sync_stock_weight as sync_stock_weight_excect
 from sync.stock.sync_income import additional_data as sync_income
 from sync.stock.sync_financial_data import additional_data as sync_financial_data
+import sync.stock.sync_financing_margin_trading
 
 
 
@@ -24,35 +25,36 @@ from util.date_util import TimeUtils
 
 # 示例使用
 if __name__ == "__main__":
+    # 同步两融
+    """print('同步两融')
+    sync.stock.sync_financing_margin_trading.additional_data()
+    analys = sync.index.sixty_index_analysis.SixtyIndexAnalysis()
+    # 同步权重
+    print('同步权重')
+    print('同步各个公司财务合并数据')
+    sync.index.sync_stock_weight.additional_data()
+    # 同步etf市场数据
+    #print('同步etf市场数据')
+    #sync.market_data.market_data_sync.additional_data()
+    # 同步收入数据
+    print('同步收入数据')
+    sync.stock.sync_income.additional_data()
+    #同步各个公司财务合并数据
+    print('同步各个公司财务合并数据')
+    sync.stock.sync_financial_data.additional_data()
+    #同步各个公司基础书籍
+    print('同步各个公司基础数据')
+    sync.stock.sync_stock_basic.sync_all_stock_basic()
+    #同步各个公司股票数据
+    print('同步各个公司股票数据')
+    sync.stock.sync_stock_daily_basic.sync_all_stock_basic_daily()
+    # 同步指数书籍
+    print('同步指数数据')
+    sixty_analysis = SixtyIndexAnalysis()
+    sixty_analysis.additional_data('20200101')
+
     for ts_code in constant.TS_CODE_LIST:
-        ana = StockAnalyzer(ts_code)
-        ana.plot_index_pe_pb()
-        ana.plot_index_pe_pb_weight()
-    #analys = sync.index.sixty_index_analysis.SixtyIndexAnalysis()
-    #analys.additional_data()
+        ana = StockAnalyzer(ts_code, '20200101')"""
 
-    #sync_income()
-    #sync_financial_data()
-    #sync_all_stock_basic_daily()
-    #sync_income()
-    #sync_financial_data()
-
-    #sync_stock_weight_excect('000016.SH', '20120101', '20220501')
-
-    #six = SixtyIndexAnalysis()
-    #six.get_index_pe_pb('000016.SH', '20120101', '20220501')
-
-    #sync_all_stock_basic()
-    #res = six.get_index_pe_pb('000300.SH', '20250101', '20250228')
-
-    #print(res)
-    #market_data_sync.additional_data()
-    #analysis = StockAnalyzer('399001.SZ')
-    #analysis.all_analysis()
-    #fund_map = constant.FUND_NAME_MAP
-    #for ts_code in fund_map.keys():
-    #    fund_data_sync.cal_average(ts_code)
-    #fund_analyze = FundAnalyze('159920.SZ')
-    #fund_analyze.plot_close_and_deviation_from_m60()
-    #fds.additional_data()
-
+    ana = StockAnalyzer('399001.SZ', '20200101')
+    ana.plot_percentiles('pe')

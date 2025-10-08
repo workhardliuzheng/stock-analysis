@@ -35,7 +35,6 @@ class DatabaseManager:
     def disconnect(self):
         if self.connection.is_connected():
             self.connection.close()
-            print("数据库连接已关闭")
 
     def insert(self, table, data):
         try:
@@ -61,7 +60,6 @@ class DatabaseManager:
             query = f"DELETE FROM {table} WHERE {condition}"
             cursor.execute(query)
             self.connection.commit()
-            print("数据删除成功")
         except Error as e:
             print(f"Error: {e}")
 
@@ -72,7 +70,6 @@ class DatabaseManager:
             query = f"UPDATE {table} SET {set_clause} WHERE {condition}"
             cursor.execute(query, tuple(data.values()))
             self.connection.commit()
-            print("数据更新成功")
         except Error as e:
             print(f"Error: {e}")
 
@@ -83,6 +80,16 @@ class DatabaseManager:
             if condition:
                 query += f" WHERE {condition}"
             cursor.execute(query)
+            result = cursor.fetchall()
+            return result
+        except Error as e:
+            print(f"Error: {e}")
+            return None
+
+    def execute_sql(self, sql):
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(sql)
             result = cursor.fetchall()
             return result
         except Error as e:
@@ -106,7 +113,6 @@ class DatabaseManager:
             values = [tuple(entity.to_dict_with_backticks().values()) for entity in entities]
             cursor.executemany(query, values)
             self.connection.commit()
-            print("批量数据插入成功")
         except Error as e:
             print(f"Error: {e}")
 

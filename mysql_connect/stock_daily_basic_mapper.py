@@ -78,6 +78,13 @@ class StockDailyBasicMapper(CommonMapper):
         stock_data = self.select_base_entity(columns='*', condition=condition)
         return stock_data
 
+    def select_by_trade_date_and_ts_code(self, trade_date, ts_code_list):
+        """根据股票代码和交易日期查询"""
+        placeholders = ', '.join(f'\'{code}\'' for code in ts_code_list)
+        condition = f'trade_date = \'{trade_date}\' and ts_code IN ({placeholders})'
+        stock_data = self.select_base_entity(columns='*', condition=condition)
+        return stock_data
+
     def select_max_trade_date(self, ts_code):
         """根据股票代码和交易日期查询"""
         condition = f'ts_code = \'{ts_code}\''
