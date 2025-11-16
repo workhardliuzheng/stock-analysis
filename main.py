@@ -25,13 +25,14 @@ from util.date_util import TimeUtils
 
 # 示例使用
 if __name__ == "__main__":
+    """sixty_analysis = SixtyIndexAnalysis()
+    sixty_analysis.additional_data('20200101')
+
     # 同步两融
-    """print('同步两融')
+    print('同步两融')
     sync.stock.sync_financing_margin_trading.additional_data()
-    analys = sync.index.sixty_index_analysis.SixtyIndexAnalysis()
     # 同步权重
     print('同步权重')
-    print('同步各个公司财务合并数据')
     sync.index.sync_stock_weight.additional_data()
     # 同步etf市场数据
     #print('同步etf市场数据')
@@ -52,9 +53,8 @@ if __name__ == "__main__":
     print('同步指数数据')
     sixty_analysis = SixtyIndexAnalysis()
     sixty_analysis.additional_data('20200101')
-
+"""
     for ts_code in constant.TS_CODE_LIST:
-        ana = StockAnalyzer(ts_code, '20200101')"""
+        ana = StockAnalyzer(ts_code, '20200101')
 
-    ana = StockAnalyzer('399001.SZ', '20200101')
-    ana.plot_percentiles('pe')
+        ana.plot_all_zhishu(True)

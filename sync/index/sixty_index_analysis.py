@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
 import time
 
+import numpy as np
 import pandas as pd
 import tushare as ts
 import yaml
+import talib
 
 from entity import constant
 from entity.stock_daily_basic import StockDailyBasic
@@ -31,6 +33,91 @@ mapper = SixtyIndexMapper()
 stock_weight_mapper = StockWeightMapper()
 stock_basic_mapper = StockBasicMapper()
 stock_daily_basic_mapper = StockDailyBasicMapper()
+
+
+def calculate_technical_indicators_talib(df: pd.DataFrame, price_col: str = 'close') -> pd.DataFrame:
+    """
+    使用TA-Lib计算技术指标
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        包含股票数据的DataFrame，必须包含'close', 'open', 'high', 'low'列
+    price_col : str
+        用于计算指标的价格列，默认为'close'
+
+    Returns:
+    --------
+    pd.DataFrame
+        包含所有技术指标的DataFrame
+    """
+
+    # 确保数据按日期排序
+    df = df.sort_values('trade_date').reset_index(drop=True)
+
+    # 复制数据以避免修改原始数据
+    result_df = df.copy()
+
+    # 转换为numpy数组供TA-Lib使用
+    close = result_df[price_col].values
+    high = result_df['high'].values
+    low = result_df['low'].values
+    open_price = result_df['open'].values
+
+    # 1. 移动平均线 (MA)
+    result_df['ma_5'] = talib.SMA(close, timeperiod=5)
+    result_df['ma_10'] = talib.SMA(close, timeperiod=10)
+    result_df['ma_20'] = talib.SMA(close, timeperiod=20)
+    result_df['ma_50'] = talib.SMA(close, timeperiod=50)
+
+    # 2. 加权移动平均线 (WMA)
+    result_df['wma_5'] = talib.WMA(close, timeperiod=5)
+    result_df['wma_10'] = talib.WMA(close, timeperiod=10)
+    result_df['wma_20'] = talib.WMA(close, timeperiod=20)
+    result_df['wma_50'] = talib.WMA(close, timeperiod=50)
+
+    # 3. MACD指标
+    macd, macd_signal, macd_hist = talib.MACD(close,
+                                              fastperiod=12,
+                                              slowperiod=26,
+                                              signalperiod=9)
+    result_df['macd'] = macd
+    result_df['macd_signal_line'] = macd_signal
+    result_df['macd_histogram'] = macd_hist
+
+    # 4. RSI指标
+    result_df['rsi'] = talib.RSI(close, timeperiod=14)
+
+    # 5. KDJ指标 (使用STOCH函数计算)
+    slowk, slowd = talib.STOCH(high, low, close,
+                               fastk_period=9,
+                               slowk_period=3,
+                               slowk_matype=0,
+                               slowd_period=3,
+                               slowd_matype=0)
+    result_df['kdj_k'] = slowk
+    result_df['kdj_d'] = slowd
+    result_df['kdj_j'] = 3 * slowk - 2 * slowd  # J = 3K - 2D
+
+    # 6. 布林带
+    bb_upper, bb_middle, bb_lower = talib.BBANDS(close,
+                                                 timeperiod=20,
+                                                 nbdevup=2,
+                                                 nbdevdn=2,
+                                                 matype=0)
+    result_df['bb_high'] = bb_upper
+    result_df['bb_mid'] = bb_middle
+    result_df['bb_low'] = bb_lower
+
+    # 7. OBV指标 (需要成交量数据)
+    # 如果有成交量数据，使用以下代码
+    if 'vol' in result_df.columns:
+        volume = result_df['vol'].values
+        result_df['obv'] = talib.OBV(close, volume)
+    else:
+        result_df['obv'] = np.nan
+
+    return result_df
 
 class SixtyIndexAnalysis:
 
@@ -60,9 +147,8 @@ class SixtyIndexAnalysis:
                 max_trade_date = TimeUtils.date_to_str(max_trade_datetime)
             start_date = TimeUtils.get_n_days_before_or_after(max_trade_date, 1, True)
             self.init_sixty_index_average_value(ts_code, start_date, TimeUtils.get_current_date_str())
+            self.additional_tech_data_and_update_mapper(ts_code, start_date, TimeUtils.get_current_date_str())
             self.additional_pe_data_and_update_mapper(ts_code, pe_cal_start_date, TimeUtils.get_current_date_str())
-
-
 
 
     def init_sixty_index_average_value(self, ts_code, start_date, end_date):
@@ -120,16 +206,24 @@ class SixtyIndexAnalysis:
                                        average_amount=float(sixty_index_average_value),
                                        deviation_rate=float(deviation_rate * 100),
                                        name=constant.TS_CODE_NAME_DICT[ts_code],
-                                       pb_weight=0,
-                                       pe_weight=0,
-                                       pe_ttm_weight=0,
-                                       pe_ttm=0,
-                                       pb=0,
-                                       pe=0,
-                                       pe_profit_dedt=0,
-                                       pe_profit_dedt_ttm=0)
+                                       pb_weight=0, pe_weight=0, pe_ttm_weight=0, pe_ttm=0, pb=0, pe=0, pe_profit_dedt=0,
+                                       pe_profit_dedt_ttm=0, ma_5=0, ma_10=0, ma_20=0, ma_50=0, wma_5=0, wma_10=0,
+                                       wma_20=0, wma_50=0, macd=0, macd_signal_line=0, macd_histogram=0, rsi=0, kdj_k=0,
+                                       kdj_d=0, kdj_j=0, bb_high=0, bb_mid=0, bb_low=0, obv=0
+                                       )
                 mapper.insert_index(stock_data)
                 this_loop_date = row.cal_date
+
+    def get_index_tech_metric(self, index_code, start_date, end_date):
+        index_data = mapper.select_by_code_and_trade_round(index_code, start_date, end_date)
+
+        data_frame_list = []
+        for row in index_data:
+            stock_data = ClassUtil.create_entities_from_data(StockData, row)
+            data_frame_list.append(stock_data.to_dict())
+        data_pd = pd.DataFrame(data_frame_list)
+        return calculate_technical_indicators_talib(data_pd, 'close')
+
 
     def get_index_pe_pb(self, index_code, start_date, end_date):
         """
@@ -143,7 +237,6 @@ class SixtyIndexAnalysis:
         Returns:
             pd.DataFrame: 包含每日加权PE/PB和等权PE/PB的数据
         """
-        pro = TuShareFactory.build_api_client()
 
         # 将日期字符串转换为datetime对象
         start_date = datetime.strptime(start_date, '%Y%m%d')
@@ -808,6 +901,90 @@ class SixtyIndexAnalysis:
             'weighted_pe_ttm_dedt' : weighted_pe_ttm_dedt
         }
 
+    def additional_tech_data_and_update_mapper(self, index_code, start_date, end_date, batch_size=100):
+        """
+        获取指数技术指标数据并批量更新到数据库（包含等权指标）
+        """
+        try:
+            print(f"开始获取指数 {constant.TS_CODE_NAME_DICT[index_code]} 的技术指标...")
+            value = self.get_index_tech_metric(index_code=index_code, start_date=start_date, end_date=end_date)
+
+            if value.empty:
+                print(f"指数 {constant.TS_CODE_NAME_DICT[index_code]} 在 {start_date}-{end_date} 期间无技术指标数据")
+                return
+
+            print(f"获取到 {len(value)} 条技术指标数据，开始批量更新...")
+
+            # 数据验证和清理
+            value = value.dropna(subset=['trade_date'])
+
+
+            # 转换为StockData对象列表
+            stock_data_list = []
+            for index, row in value.iterrows():
+                try:
+                    stock_data = StockData(
+                        id=None,
+                        ts_code=index_code,
+                        trade_date=str(row['trade_date']),
+                        close=None, open=None, high=None, low=None,
+                        pre_close=None, change=None, pct_chg=None,
+                        vol=None, amount=None, average_date=None,
+                        average_amount=None, deviation_rate=None, name=None,pb_weight=None, pe_weight=None,
+                        pe_ttm_weight=None, pb=None, pe=None,pe_ttm=None,pe_profit_dedt=None,pe_profit_dedt_ttm=None,
+                        ma_5 = float(row['ma_5']) if pd.notna(row['ma_5']) else 0,
+                        ma_10 = float(row['ma_10']) if pd.notna(row['ma_10']) else 0,
+                        ma_20 = float(row['ma_20']) if pd.notna(row['ma_20']) else 0,
+                        ma_50 = float(row['ma_50']) if pd.notna(row['ma_50']) else 0,
+                        wma_5 = float(row['wma_5']) if pd.notna(row['wma_5']) else 0,
+                        wma_10 = float(row['wma_10']) if pd.notna(row['wma_10']) else 0,
+                        wma_20 = float(row['wma_20']) if pd.notna(row['wma_20']) else 0,
+                        wma_50 = float(row['wma_50']) if pd.notna(row['wma_50']) else 0,
+                        macd = float(row['macd']) if pd.notna(row['macd']) else 0,
+                        macd_signal_line = float(row['macd_signal_line']) if pd.notna(
+                            row['macd_signal_line']) else 0,
+                        macd_histogram = float(row['macd_histogram']) if pd.notna(
+                            row['macd_histogram']) else 0,
+                        rsi = float(row['rsi']) if pd.notna(row['rsi']) else 0,
+                        kdj_k = float(row['kdj_k']) if pd.notna(row['kdj_k']) else 0,
+                        kdj_d = float(row['kdj_d']) if pd.notna(row['kdj_d']) else 0,
+                        kdj_j = float(row['kdj_j']) if pd.notna(row['kdj_j']) else 0,
+                        bb_high = float(row['bb_high']) if pd.notna(row['bb_high']) else 0,
+                        bb_mid = float(row['bb_mid']) if pd.notna(row['bb_mid']) else 0,
+                        bb_low = float(row['bb_low']) if pd.notna(row['bb_low']) else 0,
+                        obv = float(row['obv']) if pd.notna(row['obv']) else 0
+                    )
+                    stock_data_list.append(stock_data)
+                except Exception as e:
+                    print(f"创建StockData对象失败，跳过第 {index} 行: {e}")
+                    continue
+
+            if not stock_data_list:
+                print("没有有效的数据需要更新")
+                return
+
+            # 分批更新
+            total_updated = 0
+            update_fields = ['ma_5','ma_10','ma_20', 'ma_50', 'wma_5', 'wma_10', 'wma_20', 'wma_50', 'macd', 'macd_signal_line',
+                             'macd_histogram', 'rsi', 'kdj_k', 'kdj_d', 'kdj_j', 'bb_high', 'bb_mid', 'bb_low', 'obv']
+
+            for i in range(0, len(stock_data_list), batch_size):
+                batch = stock_data_list[i:i + batch_size]
+
+                try:
+                    self._safe_batch_update(batch, update_fields)
+                    total_updated += len(batch)
+                    print(f"已更新 {total_updated}/{len(stock_data_list)} 条数据")
+
+                except Exception as e:
+                    print(f"第 {i // batch_size + 1} 批更新失败: {e}")
+
+            print(f"技术指标数据更新完成，共成功更新 {total_updated} 条数据")
+
+        except Exception as e:
+            print(f"更新技术指标数据时发生严重错误: {e}")
+            raise e
+
     # 同时更新 additional_pe_data_and_update_mapper 方法
     def additional_pe_data_and_update_mapper(self, index_code, start_date, end_date, batch_size=100):
         """
@@ -826,6 +1003,7 @@ class SixtyIndexAnalysis:
             # 数据验证和清理
             value = value.dropna(subset=['trade_date'])
 
+
             # 转换为StockData对象列表
             stock_data_list = []
             for index, row in value.iterrows():
@@ -839,15 +1017,18 @@ class SixtyIndexAnalysis:
                         vol=None, amount=None, average_date=None,
                         average_amount=None, deviation_rate=None, name=None,
                         # 指数权重加权指标
-                        pb_weight=float(row['weighted_pb']) if pd.notna(row['weighted_pb']) else None,
-                        pe_weight=float(row['weighted_pe']) if pd.notna(row['weighted_pe']) else None,
-                        pe_ttm_weight=float(row['weighted_pe_ttm']) if pd.notna(row['weighted_pe_ttm']) else None,
+                        pb_weight=float(row['weighted_pb']) if pd.notna(row['weighted_pb']) else 0,
+                        pe_weight=float(row['weighted_pe']) if pd.notna(row['weighted_pe']) else 0,
+                        pe_ttm_weight=float(row['weighted_pe_ttm']) if pd.notna(row['weighted_pe_ttm']) else 0,
                         # 市值权重等权指标
-                        pb=float(row['equal_weight_pb']) if pd.notna(row['equal_weight_pb']) else None,
-                        pe=float(row['equal_weight_pe']) if pd.notna(row['equal_weight_pe']) else None,
-                        pe_ttm=float(row['equal_weight_pe_ttm']) if pd.notna(row['equal_weight_pe_ttm']) else None,
-                        pe_profit_dedt=float(row['weighted_pe_dedt']) if pd.notna(row['weighted_pe_dedt']) else None,
-                        pe_profit_dedt_ttm=float(row['weighted_pe_ttm_dedt']) if pd.notna(row['weighted_pe_dedt']) else None
+                        pb=float(row['equal_weight_pb']) if pd.notna(row['equal_weight_pb']) else 0,
+                        pe=float(row['equal_weight_pe']) if pd.notna(row['equal_weight_pe']) else 0,
+                        pe_ttm=float(row['equal_weight_pe_ttm']) if pd.notna(row['equal_weight_pe_ttm']) else 0,
+                        pe_profit_dedt=float(row['weighted_pe_dedt']) if pd.notna(row['weighted_pe_dedt']) else 0,
+                        pe_profit_dedt_ttm=float(row['weighted_pe_ttm_dedt']) if pd.notna(row['weighted_pe_dedt']) else 0,
+                        ma_5=None,ma_10 = None,ma_20 = None,ma_50 = None,wma_5 = None,wma_10 = None,wma_20 = None,
+                        wma_50 = None,macd = None,macd_signal_line = None,macd_histogram = None,rsi = None,kdj_k = None,
+                        kdj_d = None,kdj_j = None,bb_high = None,bb_mid = None,bb_low = None, obv = None
                     )
                     stock_data_list.append(stock_data)
                 except Exception as e:

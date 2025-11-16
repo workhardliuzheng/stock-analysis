@@ -76,8 +76,13 @@ class StockAnalyzer:
         data = self.data
         left_data = DataPltMetadata('close', '收盘价', 1, 'red', linestyle='-')
         right_data = DataPltMetadata(column, label, 1, 'blue', linestyle='-')
+        right2_data = None
+        if str.startswith(column, 'pb'):
+            right2_data = DataPltMetadata('pb', 'pb', 1, 'green', linestyle='-')
+        else:
+            right2_data = DataPltMetadata('pe', 'pe', 1, 'green', linestyle='-')
         left_plot_metadata_list = [left_data]
-        right_plot_metadata_list = [right_data]
+        right_plot_metadata_list = [right_data, right2_data]
 
         # 直接获取 trade_date 最大的那行的 pe 值
         max_pe_value = data.loc[data['trade_date'].idxmax(), column]
