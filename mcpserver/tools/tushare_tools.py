@@ -1,7 +1,13 @@
+import json
+
+import pandas as pd
 from pandas.core.interchange.dataframe_protocol import DataFrame
 from pydantic import Field
 
+from entity.stock_data import StockData
+from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from tu_share_factory.tu_share_factory import TuShareFactory
+from util.class_util import ClassUtil
 
 tools=[]
 
@@ -195,6 +201,52 @@ daily_basic_field_map = {
     "circ_mv": "流通市值"
 }
 
+index_daily_field_map = {
+    "id": "主键",
+    "ts_code": "指数代码",
+    "trade_date": "交易日",
+    "close": "收盘点位",
+    "open": "开盘点位",
+    "high": "最高点位",
+    "low": "最低点位",
+    "pre_close": "昨日收盘点",
+    "change": "涨跌点",
+    "pct_chg": "涨跌幅（%）",
+    "vol": "成交量（手）",
+    "amount": "成交额（千元）",
+    "average_date": "日线",
+    "average_amount": "日线值",
+    "deviation_rate": "偏移率",
+    "name": "指数名称",
+    "pe_weight": "pe加权值",
+    "pe_ttm_weight": "pe_ttm加权值",
+    "pb_weight": "pb加权值",
+    "pe": "pe等权值",
+    "pb": "pb等权值",
+    "pe_ttm": "pe_ttm等权值",
+    "pe_profit_dedt": "扣非pe加权值",
+    "pe_profit_dedt_ttm": "扣非pe_ttm加权值",
+    "ma_5": "5日均线",
+    "ma_10": "10日均线",
+    "ma_20": "20日均线",
+    "ma_50": "50日均线",
+    "wma_5": "5日加权均线",
+    "wma_10": "10日加权均线",
+    "wma_20": "20日加权均线",
+    "wma_50": "50日加权均线",
+    "macd": "macd",
+    "macd_signal_line": "macd信号",
+    "macd_histogram": "macd柱状图",
+    "rsi": "rsi",
+    "kdj_k": "kdj_k",
+    "kdj_d": "kdj_d",
+    "kdj_j": "kdj_j",
+    "bb_high": "布林带高值",
+    "bb_mid": "布林带中值",
+    "bb_low": "布林带低值",
+    "obv": "obv"
+}
+mapper = SixtyIndexMapper()
 
 def get_stock_basic(name: str = Field(description='公司名称')) -> str:
     """ 根据公司名称获取公司信息，获取ts_code时需要使用该方法 """
@@ -229,6 +281,37 @@ def get_fina_indicator(name: str = Field(description='公司名称'),
     df_chinese = _replace_columns_with_chinese(df, daily_basic_field_map)
     return df_chinese.to_json(orient='records')
 
+@tools.append
+def get_field_list(func_name: str = Field(description='需查询返回值支持列表的函数')) -> str:
+    """获取函数支持的返回值列表"""
+    if func_name == 'list_index_daily_basic':
+        return json.dumps(index_daily_field_map, ensure_ascii=False, indent=2)
+    else:
+        return ""
+
+@tools.append
+def list_index_daily_basic(ts_code: str = Field(description='指数tushare编码'),
+                           start_date: str = Field(description='指数走势的开始时间，以yyyyMMdd格式输入'),
+                           end_date: str = Field(description='指数走势的结束时间，以yyyyMMdd格式输入'),
+                           field_list: list = Field(description='需要返回的参数列表，需要从get_field_list获取')) -> str:
+    """根据指数编码获取最近指数走势与技术指标"""
+    index_data = mapper.select_by_code_and_trade_round(ts_code=ts_code, start_date=start_date, end_date=end_date)
+    data_frame_list = []
+    for row in index_data:
+        stock_data = ClassUtil.create_entities_from_data(StockData, row)
+        data_frame_list.append(stock_data.to_dict())
+
+    all_field_pd = pd.DataFrame(data_frame_list)
+    #all_field_pd['trade_date'] = all_field_pd['trade_date'].dt.strftime('%Y%m%d')
+
+    # 将'date_column'列转换为日期时间类型
+    all_field_pd['trade_date'] = pd.to_datetime(all_field_pd['trade_date'])
+
+    # 将'date_column'列格式化为'yyyy-MM-dd'格式
+    all_field_pd['trade_date'] = all_field_pd['trade_date'].dt.strftime('%Y-%m-%d')
+
+    df_chinese = _replace_columns_with_chinese(all_field_pd[field_list], index_daily_field_map)
+    return df_chinese.to_json(orient='records')
 
 def _replace_columns_with_chinese(df: DataFrame, field_map: dict) -> DataFrame:
     """

@@ -1,2 +1,5 @@
 tushare~=1.4.21
-mysql-connector-python~=9.3.0
+SQLAlchemy~=2.0.0
+pymysql~=1.1.0
+pyyaml~=6.0.0
+numpy~=1.26.0

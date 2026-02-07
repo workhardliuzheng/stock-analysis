@@ -49,11 +49,11 @@ if __name__ == "__main__":
     #同步各个公司股票数据
     print('同步各个公司股票数据')
     sync.stock.sync_stock_daily_basic.sync_all_stock_basic_daily()
-    # 同步指数书籍
+    # 同步指数书籍"""
     print('同步指数数据')
     sixty_analysis = SixtyIndexAnalysis()
     sixty_analysis.additional_data('20200101')
-"""
+
     for ts_code in constant.TS_CODE_LIST:
         ana = StockAnalyzer(ts_code, '20200101')
 
