@@ -11,9 +11,9 @@ CREATE TABLE `ts_stock_data` (
   `pct_chg` double(255,4) DEFAULT NULL COMMENT '涨跌幅（%）',
   `vol` double(255,4) DEFAULT NULL COMMENT '成交量（手）',
   `amount` double(255,4) DEFAULT NULL COMMENT '成交额（千元）',
-  `average_date` int(255) DEFAULT NULL COMMENT '日线',
+  `average_date` int(255) DEFAULT NULL COMMENT '日线（已废弃）',
   `average_amount` double(255,4) DEFAULT NULL COMMENT '日线值',
-  `deviation_rate` double(255,5) DEFAULT NULL COMMENT '偏移率',
+  `deviation_rate` TEXT DEFAULT NULL COMMENT '偏离率（JSON格式，包含ma_5/ma_10/ma_20/ma_50）',
   `name` varchar(255) DEFAULT NULL COMMENT '指数名称',
   `pe_weight` float(255,4) DEFAULT NULL COMMENT 'pe加权值',
   `pe_ttm_weight` float(255,0) DEFAULT NULL COMMENT 'pe_ttm加权值',
@@ -21,5 +21,31 @@ CREATE TABLE `ts_stock_data` (
   `pe` float(255,4) DEFAULT NULL COMMENT 'pe等权值',
   `pb` float(255,4) DEFAULT NULL COMMENT 'pb等权值',
   `pe_ttm` float(255,4) DEFAULT NULL COMMENT 'pe_ttm等权值',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+  `pe_profit_dedt` float(255,4) DEFAULT NULL COMMENT 'pe扣非加权值',
+  `pe_profit_dedt_ttm` float(255,4) DEFAULT NULL COMMENT 'pe_ttm扣非加权值',
+  `ma_5` double(255,4) DEFAULT NULL COMMENT '5日均线',
+  `ma_10` double(255,4) DEFAULT NULL COMMENT '10日均线',
+  `ma_20` double(255,4) DEFAULT NULL COMMENT '20日均线',
+  `ma_50` double(255,4) DEFAULT NULL COMMENT '50日均线',
+  `wma_5` double(255,4) DEFAULT NULL COMMENT '5日加权均线',
+  `wma_10` double(255,4) DEFAULT NULL COMMENT '10日加权均线',
+  `wma_20` double(255,4) DEFAULT NULL COMMENT '20日加权均线',
+  `wma_50` double(255,4) DEFAULT NULL COMMENT '50日加权均线',
+  `macd` double(255,4) DEFAULT NULL COMMENT 'MACD',
+  `macd_signal_line` double(255,4) DEFAULT NULL COMMENT 'MACD信号线',
+  `macd_histogram` double(255,4) DEFAULT NULL COMMENT 'MACD柱状图',
+  `rsi` double(255,4) DEFAULT NULL COMMENT 'RSI',
+  `kdj_k` double(255,4) DEFAULT NULL COMMENT 'KDJ_K',
+  `kdj_d` double(255,4) DEFAULT NULL COMMENT 'KDJ_D',
+  `kdj_j` double(255,4) DEFAULT NULL COMMENT 'KDJ_J',
+  `bb_high` double(255,4) DEFAULT NULL COMMENT '布林带上轨',
+  `bb_mid` double(255,4) DEFAULT NULL COMMENT '布林带中轨',
+  `bb_low` double(255,4) DEFAULT NULL COMMENT '布林带下轨',
+  `obv` double(255,4) DEFAULT NULL COMMENT 'OBV',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_ts_code_trade_date` (`ts_code`, `trade_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 数据库变更脚本（用于已有表的升级）
+-- ALTER TABLE ts_stock_data MODIFY COLUMN deviation_rate TEXT COMMENT '偏离率（JSON格式，包含ma_5/ma_10/ma_20/ma_50）';
+-- ALTER TABLE ts_stock_data ADD UNIQUE INDEX idx_ts_code_trade_date (ts_code, trade_date);

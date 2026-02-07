@@ -1,5 +1,7 @@
 from abc import abstractmethod
 
+from util.class_util import ClassUtil
+
 
 class BaseEntity:
 
@@ -20,3 +22,31 @@ class BaseEntity:
     @abstractmethod
     def from_list_to_entity(self, list):
         pass
+
+    @classmethod
+    def from_df_row(cls, row, field_mapping=None):
+        """
+        从DataFrame行创建实例
+        
+        Args:
+            row: DataFrame的一行（Series或dict）
+            field_mapping: 字段映射 {df列名: entity参数名}
+            
+        Returns:
+            Entity实例
+        """
+        return ClassUtil.from_dataframe_row(cls, row, field_mapping)
+
+    @classmethod
+    def from_df(cls, df, field_mapping=None) -> list:
+        """
+        批量从DataFrame创建实例列表
+        
+        Args:
+            df: DataFrame
+            field_mapping: 字段映射 {df列名: entity参数名}
+            
+        Returns:
+            Entity实例列表
+        """
+        return ClassUtil.from_dataframe(cls, df, field_mapping)

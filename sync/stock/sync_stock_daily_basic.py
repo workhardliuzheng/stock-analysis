@@ -92,30 +92,10 @@ def _fetch_financial_data_batch(ts_code, start_date, end_date):
                 if profit_dedt_ttm is not None:
                     pe_ttm_profit_dedt = row['circ_mv'] * 10000 / profit_dedt_ttm
 
-            # 创建每日基础数据对象（这里需要根据你的实体类调整）
-            daily_data = StockDailyBasic(id=None,
-                                         ts_code=row['ts_code'],
-                                         trade_date=row['trade_date'],
-                                         close=row['close'] if pd.notna(row['close']) else None,
-                                         turnover_rate=row['turnover_rate'] if pd.notna(row['turnover_rate']) else None,
-                                         turnover_rate_f=row['turnover_rate_f'] if pd.notna
-                                             (row['turnover_rate_f']) else None,
-                                         volume_ratio=row['volume_ratio'] if pd.notna(row['volume_ratio']) else None,
-                                         pe=row['pe'] if pd.notna(row['pe']) else None,
-                                         pe_ttm=row['pe_ttm'] if pd.notna(row['pe_ttm']) else None,
-                                         pb=row['pb'] if pd.notna(row['pb']) else None,
-                                         ps=row['ps'] if pd.notna(row['ps']) else None,
-                                         ps_ttm=row['ps_ttm'] if pd.notna(row['ps_ttm']) else None,
-                                         dv_ratio=row['dv_ratio'] if pd.notna(row['dv_ratio']) else None,
-                                         dv_ttm=row['dv_ttm'] if pd.notna(row['dv_ttm']) else None,
-                                         total_share=row['total_share'] if pd.notna(row['total_share']) else None,
-                                         float_share=row['float_share'] if pd.notna(row['float_share']) else None,
-                                         free_share=row['free_share'] if pd.notna(row['free_share']) else None,
-                                         total_mv=row['total_mv'] if pd.notna(row['total_mv']) else None,
-                                         circ_mv=row['circ_mv'] if pd.notna(row['circ_mv']) else None,
-                                         pe_profit_dedt=pe_profit_dedt if pe_profit_dedt is not None and pe_profit_dedt >= 0 else None,
-                                         pe_ttm_profit_dedt=pe_ttm_profit_dedt if pe_ttm_profit_dedt is not None and pe_ttm_profit_dedt >= 0 else None
-                                         )
+            # 使用 from_df_row 自动转换基础字段，然后设置计算字段
+            daily_data = StockDailyBasic.from_df_row(row)
+            daily_data.pe_profit_dedt = pe_profit_dedt if pe_profit_dedt is not None and pe_profit_dedt >= 0 else None
+            daily_data.pe_ttm_profit_dedt = pe_ttm_profit_dedt if pe_ttm_profit_dedt is not None and pe_ttm_profit_dedt >= 0 else None
 
             batch_data.append(daily_data)
             batch_count += 1

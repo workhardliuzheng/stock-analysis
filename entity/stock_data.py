@@ -1,13 +1,20 @@
+import json
+
 from entity.base_entity import BaseEntity
 from util.class_util import ClassUtil
 
 
 class StockData(BaseEntity):
-    def __init__(self, id, ts_code, trade_date, close, open, high, low, pre_close, change, pct_chg, vol, amount,
-                 average_date, average_amount, deviation_rate, name, pe_weight, pe_ttm_weight, pb_weight, pe, pb,
-                 pe_ttm,
-                 pe_profit_dedt, pe_profit_dedt_ttm, ma_5, ma_10, ma_20, ma_50, wma_5, wma_10, wma_20, wma_50,
-                 macd, macd_signal_line, macd_histogram, rsi, kdj_k, kdj_d, kdj_j, bb_high, bb_mid, bb_low, obv):
+    def __init__(self, id=None, ts_code=None, trade_date=None, close=None, open=None, high=None, low=None,
+                 pre_close=None, change=None, pct_chg=None, vol=None, amount=None,
+                 average_date=None, average_amount=None, deviation_rate=None, name=None,
+                 pe_weight=None, pe_ttm_weight=None, pb_weight=None, pe=None, pb=None,
+                 pe_ttm=None, pe_profit_dedt=None, pe_profit_dedt_ttm=None,
+                 ma_5=None, ma_10=None, ma_20=None, ma_50=None,
+                 wma_5=None, wma_10=None, wma_20=None, wma_50=None,
+                 macd=None, macd_signal_line=None, macd_histogram=None, rsi=None,
+                 kdj_k=None, kdj_d=None, kdj_j=None,
+                 bb_high=None, bb_mid=None, bb_low=None, obv=None):
         self.id = id
         self.ts_code = ts_code
         self.trade_date = trade_date
@@ -60,3 +67,16 @@ class StockData(BaseEntity):
 
     def set_id(self, id):
         self.id = id
+
+    def get_deviation_rate_dict(self) -> dict:
+        """解析 deviation_rate JSON 返回字典"""
+        if self.deviation_rate:
+            try:
+                return json.loads(self.deviation_rate)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+    def set_deviation_rate_from_dict(self, rate_dict: dict):
+        """从字典设置 deviation_rate"""
+        self.deviation_rate = json.dumps(rate_dict)

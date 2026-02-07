@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from analysis.calculate_junxian import cal_cal_average_amount
+from analysis.technical_indicator_calculator import TechnicalIndicatorCalculator
 from entity import constant
 from entity.fund_data import FundData
 from mysql_connect.fund_data_mapper import FundDataMapper
@@ -43,40 +43,16 @@ def additional_data():
 
         sync_fund_data(ts_code, start_date, end_date, fund_map[ts_code])
         cal_average(ts_code)
-def cal_average(ts_code, start_date, end_date):
-    # 为了计算日线，往前多查200天
-    start_date = TimeUtils.get_n_days_before_or_after(start_date, 200, True)
-    data = fund_data_mapper.select_by_code_and_trade_round(ts_code, start_date, end_date)
-    data_frame_list = []
-    for row in data:
-        stock_data = ClassUtil.create_entities_from_data(FundData, row)
-        data_frame_list.append(stock_data.to_dict())
-    ds = pd.DataFrame(data_frame_list)
-    ds = ds.sort_values(by='trade_date')
-    averages = cal_cal_average_amount(ds, [5, 10, 20, 60, 120])
-
-    for row in averages.itertuples():
-        fund_data = FundData(id=row.id,
-                             m5=row.m5,
-                             m10=row.m10,
-                             m20=row.m20,
-                             m60=row.m60,
-                             m120=row.m120
-                             )
-        if fund_data.m5 is not None:
-            fund_data_mapper.update_by_id(fund_data, ['m5'])
-        if fund_data.m10 is not None:
-            fund_data_mapper.update_by_id(fund_data, ['m10'])
-        if fund_data.m20 is not None:
-            fund_data_mapper.update_by_id(fund_data, ['m20'])
-        if fund_data.m60 is not None:
-            fund_data_mapper.update_by_id(fund_data, ['m60'])
-        if fund_data.m120 is not None:
-            fund_data_mapper.update_by_id(fund_data, ['m120'])
-
 
 
 def cal_average(ts_code):
+    """
+    计算基金的移动平均线
+    使用通用技术指标计算器
+    
+    Args:
+        ts_code: 基金代码
+    """
     data = fund_data_mapper.select_by_ts_code(ts_code)
     data_frame_list = []
     for row in data:
@@ -84,18 +60,47 @@ def cal_average(ts_code):
         data_frame_list.append(stock_data.to_dict())
 
     ds = pd.DataFrame(data_frame_list)
+    if ds.empty:
+        return
+    
     ds = ds.sort_values(by='trade_date')
 
-    averages = cal_cal_average_amount(ds, [5,10,20,60,120])
+    # 使用通用技术指标计算器（仅计算 MA）
+    calc = TechnicalIndicatorCalculator(
+        ma_periods=[5, 10, 20, 60, 120],
+        include_wma=False,
+        include_macd=False,
+        include_kdj=False,
+        include_bollinger=False,
+        include_rsi=False,
+        include_obv=False
+    )
+    averages = calc.calculate(ds)
+    
+    # 更新数据库
     for row in averages.itertuples():
-        fund_data = FundData(id=row.id,
-                             m5=row.m5,
-                             m10=row.m10,
-                             m20=row.m20,
-                             m60=row.m60,
-                             m120=row.m120
-                             )
-        fund_data_mapper.update_by_id(fund_data, ['m5','m10','m20','m60','m120'])
+        fund_data = FundData(
+            id=row.id,
+            m5=row.ma_5 if pd.notna(row.ma_5) else None,
+            m10=row.ma_10 if pd.notna(row.ma_10) else None,
+            m20=row.ma_20 if pd.notna(row.ma_20) else None,
+            m60=row.ma_60 if pd.notna(row.ma_60) else None,
+            m120=row.ma_120 if pd.notna(row.ma_120) else None
+        )
+        update_fields = []
+        if fund_data.m5 is not None:
+            update_fields.append('m5')
+        if fund_data.m10 is not None:
+            update_fields.append('m10')
+        if fund_data.m20 is not None:
+            update_fields.append('m20')
+        if fund_data.m60 is not None:
+            update_fields.append('m60')
+        if fund_data.m120 is not None:
+            update_fields.append('m120')
+        
+        if update_fields:
+            fund_data_mapper.update_by_id(fund_data, update_fields)
 
 def sync_fund_data(ts_code, start_date, end_date, name):
     pro = TuShareFactory.build_api_client()
@@ -111,22 +116,12 @@ def sync_fund_data(ts_code, start_date, end_date, name):
             "offset": index * size
         }, fields=FUND_DATA_FIELDS)
 
-        for data in daily_data.itertuples():
-            # 生成数据
-            fund_data = FundData(id=None,
-                                     ts_code=data.ts_code,
-                                     trade_date=TimeUtils.str_to_date(data.trade_date),
-                                     name=name,
-                                     pre_close= None if np.isnan(data.pre_close) else data.pre_close,
-                                     open=None if np.isnan(data.open) else data.open,
-                                     high=None if np.isnan(data.high) else data.high,
-                                     low=None if np.isnan(data.low) else data.low,
-                                     close=None if np.isnan(data.close) else data.close,
-                                     change=None if np.isnan(data.change) else data.change,
-                                     pct_chg=None if np.isnan(data.pct_chg) else data.pct_chg,
-                                     vol=None if np.isnan(data.vol) else data.vol,
-                                     amount=None if np.isnan(data.amount) else data.amount
-                                     )
+        for _, row in daily_data.iterrows():
+            # 使用 from_df_row 自动转换基础字段
+            fund_data = FundData.from_df_row(row)
+            # 设置需要特殊处理的字段
+            fund_data.trade_date = TimeUtils.str_to_date(row['trade_date'])
+            fund_data.name = name
             fund_data_mapper.insert_fund_data(fund_data)
         index = index + 1
         size = daily_data.shape[0]

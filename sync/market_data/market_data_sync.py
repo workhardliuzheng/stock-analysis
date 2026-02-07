@@ -35,23 +35,10 @@ def sync_market_date(start_date, end_date):
             "offset": index * size
         }, fields=MARKET_DATA_FIELDS)
 
-        for data in daily_data.itertuples():
-            # 生成数据
-            market_data = MarketData(id=None,
-                                     ts_code=data.ts_code,
-                                     trade_date=TimeUtils.str_to_date(data.trade_date),
-                                     ts_name=data.ts_name,
-                                     total_mv= None if np.isnan(data.total_mv) else data.total_mv,
-                                     vol=None if np.isnan(data.vol) else data.vol,
-                                     trans_count=None if np.isnan(data.trans_count) else data.trans_count,
-                                     pe=None if np.isnan(data.pe) else data.pe,
-                                     tr=None if np.isnan(data.tr) else data.tr,
-                                     exchange=data.exchange,
-                                     amount=None if np.isnan(data.amount) else data.amount,
-                                     float_mv=None if np.isnan(data.float_mv) else data.float_mv,
-                                     float_share=None if np.isnan(data.float_share) else data.float_share,
-                                     total_share=None if np.isnan(data.total_share) else data.total_share,
-                                     com_count=None if np.isnan(data.com_count) else data.com_count,
-                                     )
+        for _, row in daily_data.iterrows():
+            # 使用 from_df_row 自动转换基础字段
+            market_data = MarketData.from_df_row(row)
+            # 设置需要特殊处理的字段
+            market_data.trade_date = TimeUtils.str_to_date(row['trade_date'])
             mapper.insert_market_data(market_data)
         index = index + 1

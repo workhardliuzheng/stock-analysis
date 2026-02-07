@@ -38,3 +38,30 @@ class SixtyIndexMapper(CommonMapper):
 
     def update_by_ts_code_and_trade_date(self, base_entity, columns):
         self.update_base_entity(base_entity, columns, ['ts_code', 'trade_date'])
+
+    def upsert_batch(self, stock_data_list: list):
+        """
+        批量插入或更新指数数据
+        
+        使用 ON DUPLICATE KEY UPDATE 实现 upsert
+        前提：ts_stock_data 表需要有 (ts_code, trade_date) 唯一索引
+        
+        Args:
+            stock_data_list: StockData 对象列表
+        """
+        if not stock_data_list:
+            return
+        
+        # 使用 CommonMapper 的 upsert 方法
+        self.upsert_base_entities_batch(stock_data_list)
+
+    def batch_update_by_ts_code_and_trade_date(self, stock_data_list: list, columns: list):
+        """
+        批量更新指数数据
+        
+        Args:
+            stock_data_list: StockData 对象列表
+            columns: 要更新的列名列表
+        """
+        for stock_data in stock_data_list:
+            self.update_by_ts_code_and_trade_date(stock_data, columns)

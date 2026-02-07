@@ -51,29 +51,8 @@ def batch_process_stock_basic(stock_basic_df):
     total_count = 0
 
     for _, row in stock_basic_df.iterrows():
-        # 处理日期字段，将空字符串转换为None
-        list_date = row['list_date'] if pd.notna(row['list_date']) and row['list_date'] != '' else None
-        delist_date = row['delist_date'] if pd.notna(row['delist_date']) and row['delist_date'] != '' else None
-
-        # 创建股票基础信息对象
-        stock_basic = StockBasic(
-            id=None,
-            ts_code=row['ts_code'],
-            symbol=row['symbol'],
-            name=row['name'],
-            area=row['area'] if pd.notna(row['area']) else None,
-            industry=row['industry'] if pd.notna(row['industry']) else None,
-            fullname=row['fullname'] if pd.notna(row['fullname']) else None,
-            enname=row['enname'] if pd.notna(row['enname']) else None,
-            cnspell=row['cnspell'] if pd.notna(row['cnspell']) else None,
-            market=row['market'] if pd.notna(row['market']) else None,
-            exchange=row['exchange'] if pd.notna(row['exchange']) else None,
-            curr_type=row['curr_type'] if pd.notna(row['curr_type']) else None,
-            list_status=row['list_status'] if pd.notna(row['list_status']) else None,
-            list_date=list_date,
-            delist_date=delist_date,
-            is_hs=row['is_hs'] if pd.notna(row['is_hs']) else None
-        )
+        # 使用 from_df_row 自动转换，无需手动处理每个字段
+        stock_basic = StockBasic.from_df_row(row)
 
         batch_data.append(stock_basic)
         total_count += 1

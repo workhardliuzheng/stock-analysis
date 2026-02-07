@@ -52,12 +52,8 @@ def sync_stock_weight(index_code, start_date, end_date):
         total_count = 0
 
         for _, row in month_stock_info.iterrows():
-            # 生成数据
-            stock_data = StockWeight(id=None,
-                                     index_code=row['index_code'],
-                                     trade_date=row['trade_date'],
-                                     con_code=row['con_code'],
-                                     weight=row['weight'])
+            # 使用 from_df_row 自动转换
+            stock_data = StockWeight.from_df_row(row)
             batch_data.append(stock_data)
             total_count += 1
 

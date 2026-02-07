@@ -56,19 +56,8 @@ def sync_financing_margin_trading(start_date, end_date):
     total_count = 0
 
     for _, row in financing_info.iterrows():
-        # 生成数据
-        financing_margin_trading = FinancingMarginTrading(
-            id=None,
-            trade_date=row['trade_date'] if pd.notna(row['trade_date']) else None,
-            exchange_id=row['exchange_id'] if pd.notna(row['exchange_id']) else None,
-            rzye=row['rzye'] if pd.notna(row['rzye']) else None,
-            rzmre=row['rzmre'] if pd.notna(row['rzmre']) else None,
-            rzche=row['rzche'] if pd.notna(row['rzche']) else None,
-            rqye=row['rqye'] if pd.notna(row['rqye']) else None,
-            rqmcl=row['rqmcl'] if pd.notna(row['rqmcl']) else None,
-            rzrqye=row['rzrqye'] if pd.notna(row['rzrqye']) else None,
-            rqyl=row['rqyl'] if pd.notna(row['rqyl']) else None
-        )
+        # 使用 from_df_row 自动转换，无需手动处理每个字段
+        financing_margin_trading = FinancingMarginTrading.from_df_row(row)
         batch_data.append(financing_margin_trading)
         total_count += 1
 
