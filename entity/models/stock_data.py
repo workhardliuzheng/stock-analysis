@@ -1,7 +1,7 @@
 """
 股票行情数据 ORM 模型
 """
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Column, Integer, String, Float, Text
 from mysql_connect.db import Base
 
 
@@ -23,7 +23,7 @@ class StockData(Base):
     amount = Column(Float)
     average_date = Column(Float)
     average_amount = Column(Float)
-    deviation_rate = Column(Float)
+    deviation_rate = Column(Text)
     name = Column(String(50))
     pe_weight = Column(Float)
     pe_ttm_weight = Column(Float)
@@ -52,6 +52,8 @@ class StockData(Base):
     bb_mid = Column(Float)
     bb_low = Column(Float)
     obv = Column(Float)
+    cross_signals = Column(Text)
+    percentile_ranks = Column(Text)
     
     def get_trade_date(self):
         return self.trade_date

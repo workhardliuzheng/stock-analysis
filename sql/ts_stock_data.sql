@@ -42,6 +42,8 @@ CREATE TABLE `ts_stock_data` (
   `bb_mid` double(255,4) DEFAULT NULL COMMENT '布林带中轨',
   `bb_low` double(255,4) DEFAULT NULL COMMENT '布林带下轨',
   `obv` double(255,4) DEFAULT NULL COMMENT 'OBV',
+  `cross_signals` TEXT DEFAULT NULL COMMENT '交叉信号JSON（均线金叉死叉、MACD信号、MACD柱状图趋势）',
+  `percentile_ranks` TEXT DEFAULT NULL COMMENT '历史百分位JSON（偏离率、成交量、MACD等指标的5年百分位）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `idx_ts_code_trade_date` (`ts_code`, `trade_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -49,3 +51,5 @@ CREATE TABLE `ts_stock_data` (
 -- 数据库变更脚本（用于已有表的升级）
 -- ALTER TABLE ts_stock_data MODIFY COLUMN deviation_rate TEXT COMMENT '偏离率（JSON格式，包含ma_5/ma_10/ma_20/ma_50）';
 -- ALTER TABLE ts_stock_data ADD UNIQUE INDEX idx_ts_code_trade_date (ts_code, trade_date);
+-- ALTER TABLE ts_stock_data ADD COLUMN cross_signals TEXT DEFAULT NULL COMMENT '交叉信号JSON（均线金叉死叉、MACD信号、MACD柱状图趋势）';
+-- ALTER TABLE ts_stock_data ADD COLUMN percentile_ranks TEXT DEFAULT NULL COMMENT '历史百分位JSON（偏离率、成交量、MACD等指标的5年百分位）';

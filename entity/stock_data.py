@@ -14,7 +14,8 @@ class StockData(BaseEntity):
                  wma_5=None, wma_10=None, wma_20=None, wma_50=None,
                  macd=None, macd_signal_line=None, macd_histogram=None, rsi=None,
                  kdj_k=None, kdj_d=None, kdj_j=None,
-                 bb_high=None, bb_mid=None, bb_low=None, obv=None):
+                 bb_high=None, bb_mid=None, bb_low=None, obv=None,
+                 cross_signals=None, percentile_ranks=None):
         self.id = id
         self.ts_code = ts_code
         self.trade_date = trade_date
@@ -58,6 +59,8 @@ class StockData(BaseEntity):
         self.bb_mid = bb_mid
         self.bb_low = bb_low
         self.obv = obv
+        self.cross_signals = cross_signals
+        self.percentile_ranks = percentile_ranks
 
     def get_trade_date(self):
         return self.trade_date
@@ -80,3 +83,29 @@ class StockData(BaseEntity):
     def set_deviation_rate_from_dict(self, rate_dict: dict):
         """从字典设置 deviation_rate"""
         self.deviation_rate = json.dumps(rate_dict)
+
+    def get_cross_signals_dict(self) -> dict:
+        """解析 cross_signals JSON 返回字典"""
+        if self.cross_signals:
+            try:
+                return json.loads(self.cross_signals)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+    def set_cross_signals_from_dict(self, signals_dict: dict):
+        """从字典设置 cross_signals"""
+        self.cross_signals = json.dumps(signals_dict)
+
+    def get_percentile_ranks_dict(self) -> dict:
+        """解析 percentile_ranks JSON 返回字典"""
+        if self.percentile_ranks:
+            try:
+                return json.loads(self.percentile_ranks)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+    def set_percentile_ranks_from_dict(self, ranks_dict: dict):
+        """从字典设置 percentile_ranks"""
+        self.percentile_ranks = json.dumps(ranks_dict)

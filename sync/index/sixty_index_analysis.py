@@ -13,6 +13,8 @@ import pandas as pd
 
 from analysis.deviation_rate_calculator import DeviationRateCalculator
 from analysis.technical_indicator_calculator import TechnicalIndicatorCalculator
+from analysis.cross_signal_detector import CrossSignalDetector
+from analysis.percentile_calculator import PercentileCalculator
 from entity import constant
 from entity.stock_data import StockData
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
@@ -33,12 +35,15 @@ class SixtyIndexAnalysis:
     - 计算技术指标（MA、MACD、RSI、KDJ、布林带等）
     - 计算估值指标（PE、PB）
     - 计算偏离率（JSON 格式存储）
+    - 计算交叉信号（均线金叉死叉、MACD金叉死叉）
+    - 计算历史百分位（各指标的5年百分位）
     """
     
     # 技术指标计算配置
     MA_PERIODS = [5, 10, 20, 50]
     WMA_PERIODS = [5, 10, 20, 50]
     BATCH_SIZE = 100
+    PERCENTILE_LOOKBACK_YEARS = 5
     
     def __init__(self):
         """初始化服务组件"""
@@ -49,6 +54,10 @@ class SixtyIndexAnalysis:
         )
         self.deviation_calculator = DeviationRateCalculator(
             ma_periods=self.MA_PERIODS
+        )
+        self.cross_detector = CrossSignalDetector()
+        self.percentile_calculator = PercentileCalculator(
+            lookback_years=self.PERCENTILE_LOOKBACK_YEARS
         )
         self.valuation_calculator = ValuationCalculator()
     
@@ -61,8 +70,11 @@ class SixtyIndexAnalysis:
         2. 批量获取行情数据
         3. 计算技术指标
         4. 计算偏离率 JSON
-        5. 批量插入数据库
-        6. 更新 PE/PB 数据
+        5. 计算交叉信号（均线金叉死叉、MACD金叉死叉）
+        6. 计算历史百分位（5年窗口）
+        7. 过滤增量数据
+        8. 批量插入数据库
+        9. 更新 PE/PB 数据
         
         Args:
             pe_cal_start_date: PE/PB 计算的起始日期
@@ -112,7 +124,15 @@ class SixtyIndexAnalysis:
         # 4. 计算偏离率 JSON
         market_df = self.deviation_calculator.calculate(market_df)
         
-        # 5. 过滤只保留需要同步的日期范围内的数据
+        # 5. 计算交叉信号（均线金叉死叉、MACD金叉死叉）
+        market_df = self.cross_detector.detect(market_df)
+        print(f"  交叉信号计算完成")
+        
+        # 6. 计算历史百分位（需要全量历史数据）
+        market_df = self.percentile_calculator.calculate(market_df)
+        print(f"  历史百分位计算完成")
+        
+        # 7. 过滤只保留需要同步的日期范围内的数据
         market_df = market_df[market_df['trade_date'] >= start_date].reset_index(drop=True)
         
         if market_df.empty:
@@ -121,13 +141,13 @@ class SixtyIndexAnalysis:
         
         print(f"  过滤后 {len(market_df)} 条数据需要同步")
         
-        # 6. 转换为 StockData 对象并批量插入
+        # 8. 转换为 StockData 对象并批量插入
         stock_data_list = self._convert_to_stock_data(market_df, ts_code)
         self._batch_upsert(stock_data_list)
         
         print(f"  行情数据同步完成")
         
-        # 7. 更新 PE/PB 数据
+        # 9. 更新 PE/PB 数据
         self._update_pe_pb_data(ts_code, pe_cal_start_date, end_date)
     
     def _convert_to_stock_data(self, df: pd.DataFrame, ts_code: str) -> List[StockData]:
@@ -178,7 +198,9 @@ class SixtyIndexAnalysis:
                 bb_high=self._safe_float(row.get('bb_high')),
                 bb_mid=self._safe_float(row.get('bb_mid')),
                 bb_low=self._safe_float(row.get('bb_low')),
-                obv=self._safe_float(row.get('obv'))
+                obv=self._safe_float(row.get('obv')),
+                cross_signals=row.get('cross_signals'),
+                percentile_ranks=row.get('percentile_ranks')
             )
             stock_data_list.append(stock_data)
         
@@ -300,6 +322,12 @@ class SixtyIndexAnalysis:
             # 计算偏离率
             df = self.deviation_calculator.calculate(df)
             
+            # 计算交叉信号
+            df = self.cross_detector.detect(df)
+            
+            # 计算历史百分位
+            df = self.percentile_calculator.calculate(df)
+            
             print(f"获取到 {len(df)} 条技术指标数据，开始批量更新...")
             
             # 更新字段
@@ -309,7 +337,7 @@ class SixtyIndexAnalysis:
                 'macd', 'macd_signal_line', 'macd_histogram',
                 'rsi', 'kdj_k', 'kdj_d', 'kdj_j',
                 'bb_high', 'bb_mid', 'bb_low', 'obv',
-                'deviation_rate'
+                'deviation_rate', 'cross_signals', 'percentile_ranks'
             ]
             
             total_updated = 0
@@ -336,7 +364,9 @@ class SixtyIndexAnalysis:
                     bb_mid=self._safe_float(row.get('bb_mid')),
                     bb_low=self._safe_float(row.get('bb_low')),
                     obv=self._safe_float(row.get('obv')),
-                    deviation_rate=row.get('deviation_rate')
+                    deviation_rate=row.get('deviation_rate'),
+                    cross_signals=row.get('cross_signals'),
+                    percentile_ranks=row.get('percentile_ranks')
                 )
                 mapper.update_by_ts_code_and_trade_date(stock_data, update_fields)
                 total_updated += 1
