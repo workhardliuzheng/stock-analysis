@@ -22,10 +22,19 @@ class MarketDataMapper(CommonMapper):
         return market_data
 
     def get_min_trade_time(self, ts_code=''):
-        # 构建 SQL 查询以获取最大交易时间
+        # 构建 SQL 查询以获取最小交易时间
         query=''
         if ts_code:
             query = f" ts_code = \'{ts_code}\';"
         # 执行查询
         market_data = self.select_base_entity(columns='MIN(trade_date)', condition=query)
+        return market_data[0][0]
+
+    def get_max_trade_time(self, ts_code=''):
+        # 构建 SQL 查询以获取最大交易时间
+        query=''
+        if ts_code:
+            query = f" ts_code = \'{ts_code}\';"
+        # 执行查询
+        market_data = self.select_base_entity(columns='MAX(trade_date)', condition=query)
         return market_data[0][0]

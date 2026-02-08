@@ -14,13 +14,21 @@ mapper = MarketDataMapper()
 
 
 def additional_data():
+    """
+    增量同步市场数据
+    - 有数据时：从最大交易日期同步到当前日期
+    - 无数据时：从历史起始日期同步到当前日期
+    """
     history_start_date = '20150101'
-    min_trade_datetime = mapper.get_min_trade_time()
-    if min_trade_datetime is None:
-        min_trade_datetime = TimeUtils.get_current_date_str()
+    max_trade_datetime = mapper.get_max_trade_time()
+    
+    if max_trade_datetime is None:
+        start_date = history_start_date
     else:
-        min_trade_datetime = TimeUtils.date_to_str(min_trade_datetime)
-    sync_market_date(history_start_date, min_trade_datetime)
+        start_date = TimeUtils.date_to_str(max_trade_datetime)
+    
+    end_date = TimeUtils.get_current_date_str()
+    sync_market_date(start_date, end_date)
 
 def sync_market_date(start_date, end_date):
     pro = TuShareFactory.build_api_client()

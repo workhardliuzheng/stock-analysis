@@ -1,60 +1,51 @@
-# 这是一个示例 Python 脚本。
-import sync
-from analysis.fund_analyze import FundAnalyze
-from analysis.index_analyze import StockAnalyzer
-from entity import constant
-from sync import fund_data_sync as fds
-from sync.index.sixty_index_analysis import SixtyIndexAnalysis
-from sync.market_data import market_data_sync
-from sync.market_data.market_data_sync import additional_data as sync_market_data
-from sync.index.sync_stock_weight import additional_data as sync_stock_weight
-from sync.index.sync_stock_weight import sync_stock_weight as sync_stock_weight_excect
-from sync.stock.sync_income import additional_data as sync_income
-from sync.stock.sync_financial_data import additional_data as sync_financial_data
-import sync.stock.sync_financing_margin_trading
+"""
+股票分析系统 - 统一入口
+
+支持两种运行模式：
+1. sync - 数据同步（同步指数、股票、财务等数据）
+2. plot - 图表生成（生成技术分析图表）
+
+使用示例：
+    python main.py sync                      # 同步所有数据
+    python main.py sync --index-only         # 仅同步指数数据
+    python main.py plot                      # 生成所有图表
+    python main.py plot --ts-code 000001.SH  # 生成指定指数图表
+    python main.py plot --show               # 生成并显示图表
+"""
+import argparse
 
 
-
-from sync.stock.sync_stock_basic import sync_all_stock_basic
-from sync.stock.sync_stock_daily_basic import sync_all_stock_basic_daily
-from util.date_util import TimeUtils
-
-# 按 ⌃R 执行或将其替换为您的代码。
-# 按 双击 ⇧ 在所有地方搜索类、文件、工具窗口、操作和设置。。
-
-
-# 示例使用
 if __name__ == "__main__":
-    """sixty_analysis = SixtyIndexAnalysis()
-    sixty_analysis.additional_data('20200101')
-
-    # 同步两融
-    print('同步两融')
-    sync.stock.sync_financing_margin_trading.additional_data()
-    # 同步权重
-    print('同步权重')
-    sync.index.sync_stock_weight.additional_data()
-    # 同步etf市场数据
-    #print('同步etf市场数据')
-    #sync.market_data.market_data_sync.additional_data()
-    # 同步收入数据
-    print('同步收入数据')
-    sync.stock.sync_income.additional_data()
-    #同步各个公司财务合并数据
-    print('同步各个公司财务合并数据')
-    sync.stock.sync_financial_data.additional_data()
-    #同步各个公司基础书籍
-    print('同步各个公司基础数据')
-    sync.stock.sync_stock_basic.sync_all_stock_basic()
-    #同步各个公司股票数据
-    print('同步各个公司股票数据')
-    sync.stock.sync_stock_daily_basic.sync_all_stock_basic_daily()
-    # 同步指数书籍"""
-    print('同步指数数据')
-    sixty_analysis = SixtyIndexAnalysis()
-    sixty_analysis.additional_data('20200101')
-
-    for ts_code in constant.TS_CODE_LIST:
-        ana = StockAnalyzer(ts_code, '20200101')
-
-        ana.plot_all_zhishu(True)
+    parser = argparse.ArgumentParser(
+        description='股票分析系统',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+示例:
+  python main.py sync                      同步所有数据
+  python main.py sync --index-only         仅同步指数数据
+  python main.py plot                      生成所有图表
+  python main.py plot --ts-code 000001.SH  生成指定指数图表
+  python main.py plot --show               生成并显示图表
+        """
+    )
+    parser.add_argument('mode', choices=['sync', 'plot'], help='运行模式: sync(数据同步) 或 plot(图表生成)')
+    parser.add_argument('--start-date', default='20200101', help='同步开始日期 (默认: 20200101)')
+    parser.add_argument('--index-only', action='store_true', help='仅同步指数数据 (sync模式)')
+    parser.add_argument('--ts-code', help='指定指数代码 (plot模式)')
+    parser.add_argument('--save-dir', help='图表保存目录 (plot模式)')
+    parser.add_argument('--show', action='store_true', help='显示图表 (plot模式)')
+    args = parser.parse_args()
+    
+    if args.mode == 'sync':
+        from sync_main import sync_all, sync_index_only
+        if args.index_only:
+            sync_index_only(args.start_date)
+        else:
+            sync_all(args.start_date)
+    
+    elif args.mode == 'plot':
+        from plot_main import plot_all, plot_single
+        if args.ts_code:
+            plot_single(args.ts_code, save_dir=args.save_dir, show=args.show)
+        else:
+            plot_all(save_dir=args.save_dir, show=args.show)
