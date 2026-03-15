@@ -50,3 +50,4 @@ def sync_market_date(start_date, end_date):
             market_data.trade_date = TimeUtils.str_to_date(row['trade_date'])
             mapper.insert_market_data(market_data)
         index = index + 1
+        size = daily_data.shape[0]

@@ -199,6 +199,13 @@ class SixtyIndexAnalysis:
                 bb_mid=self._safe_float(row.get('bb_mid')),
                 bb_low=self._safe_float(row.get('bb_low')),
                 obv=self._safe_float(row.get('obv')),
+                atr=self._safe_float(row.get('atr')),
+                adx=self._safe_float(row.get('adx')),
+                plus_di=self._safe_float(row.get('plus_di')),
+                minus_di=self._safe_float(row.get('minus_di')),
+                cci=self._safe_float(row.get('cci')),
+                vol_ma_5=self._safe_float(row.get('vol_ma_5')),
+                vol_ma_10=self._safe_float(row.get('vol_ma_10')),
                 cross_signals=row.get('cross_signals'),
                 percentile_ranks=row.get('percentile_ranks')
             )
@@ -337,6 +344,8 @@ class SixtyIndexAnalysis:
                 'macd', 'macd_signal_line', 'macd_histogram',
                 'rsi', 'kdj_k', 'kdj_d', 'kdj_j',
                 'bb_high', 'bb_mid', 'bb_low', 'obv',
+                'atr', 'adx', 'plus_di', 'minus_di',
+                'cci', 'vol_ma_5', 'vol_ma_10',
                 'deviation_rate', 'cross_signals', 'percentile_ranks'
             ]
             
@@ -364,6 +373,13 @@ class SixtyIndexAnalysis:
                     bb_mid=self._safe_float(row.get('bb_mid')),
                     bb_low=self._safe_float(row.get('bb_low')),
                     obv=self._safe_float(row.get('obv')),
+                    atr=self._safe_float(row.get('atr')),
+                    adx=self._safe_float(row.get('adx')),
+                    plus_di=self._safe_float(row.get('plus_di')),
+                    minus_di=self._safe_float(row.get('minus_di')),
+                    cci=self._safe_float(row.get('cci')),
+                    vol_ma_5=self._safe_float(row.get('vol_ma_5')),
+                    vol_ma_10=self._safe_float(row.get('vol_ma_10')),
                     deviation_rate=row.get('deviation_rate'),
                     cross_signals=row.get('cross_signals'),
                     percentile_ranks=row.get('percentile_ranks')

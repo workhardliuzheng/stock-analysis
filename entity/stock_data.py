@@ -15,6 +15,8 @@ class StockData(BaseEntity):
                  macd=None, macd_signal_line=None, macd_histogram=None, rsi=None,
                  kdj_k=None, kdj_d=None, kdj_j=None,
                  bb_high=None, bb_mid=None, bb_low=None, obv=None,
+                 atr=None, adx=None, plus_di=None, minus_di=None,
+                 cci=None, vol_ma_5=None, vol_ma_10=None,
                  cross_signals=None, percentile_ranks=None):
         self.id = id
         self.ts_code = ts_code
@@ -59,6 +61,13 @@ class StockData(BaseEntity):
         self.bb_mid = bb_mid
         self.bb_low = bb_low
         self.obv = obv
+        self.atr = atr
+        self.adx = adx
+        self.plus_di = plus_di
+        self.minus_di = minus_di
+        self.cci = cci
+        self.vol_ma_5 = vol_ma_5
+        self.vol_ma_10 = vol_ma_10
         self.cross_signals = cross_signals
         self.percentile_ranks = percentile_ranks
 

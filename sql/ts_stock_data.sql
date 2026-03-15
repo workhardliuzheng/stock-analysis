@@ -42,6 +42,13 @@ CREATE TABLE `ts_stock_data` (
   `bb_mid` double(255,4) DEFAULT NULL COMMENT '布林带中轨',
   `bb_low` double(255,4) DEFAULT NULL COMMENT '布林带下轨',
   `obv` double(255,4) DEFAULT NULL COMMENT 'OBV',
+  `atr` double(255,4) DEFAULT NULL COMMENT 'ATR(14)平均真实波幅',
+  `adx` double(255,4) DEFAULT NULL COMMENT 'ADX(14)平均趋向指数',
+  `plus_di` double(255,4) DEFAULT NULL COMMENT '+DI正向动向指标',
+  `minus_di` double(255,4) DEFAULT NULL COMMENT '-DI负向动向指标',
+  `cci` double(255,4) DEFAULT NULL COMMENT 'CCI(20)商品通道指数',
+  `vol_ma_5` double(255,4) DEFAULT NULL COMMENT '5日成交量均线',
+  `vol_ma_10` double(255,4) DEFAULT NULL COMMENT '10日成交量均线',
   `cross_signals` TEXT DEFAULT NULL COMMENT '交叉信号JSON（均线金叉死叉、MACD信号、MACD柱状图趋势）',
   `percentile_ranks` TEXT DEFAULT NULL COMMENT '历史百分位JSON（偏离率、成交量、MACD等指标的5年百分位）',
   PRIMARY KEY (`id`),
@@ -53,3 +60,10 @@ CREATE TABLE `ts_stock_data` (
 -- ALTER TABLE ts_stock_data ADD UNIQUE INDEX idx_ts_code_trade_date (ts_code, trade_date);
 -- ALTER TABLE ts_stock_data ADD COLUMN cross_signals TEXT DEFAULT NULL COMMENT '交叉信号JSON（均线金叉死叉、MACD信号、MACD柱状图趋势）';
 -- ALTER TABLE ts_stock_data ADD COLUMN percentile_ranks TEXT DEFAULT NULL COMMENT '历史百分位JSON（偏离率、成交量、MACD等指标的5年百分位）';
+-- ALTER TABLE ts_stock_data ADD COLUMN atr double(255,4) DEFAULT NULL COMMENT 'ATR(14)平均真实波幅';
+-- ALTER TABLE ts_stock_data ADD COLUMN adx double(255,4) DEFAULT NULL COMMENT 'ADX(14)平均趋向指数';
+-- ALTER TABLE ts_stock_data ADD COLUMN plus_di double(255,4) DEFAULT NULL COMMENT '+DI正向动向指标';
+-- ALTER TABLE ts_stock_data ADD COLUMN minus_di double(255,4) DEFAULT NULL COMMENT '-DI负向动向指标';
+-- ALTER TABLE ts_stock_data ADD COLUMN cci double(255,4) DEFAULT NULL COMMENT 'CCI(20)商品通道指数';
+-- ALTER TABLE ts_stock_data ADD COLUMN vol_ma_5 double(255,4) DEFAULT NULL COMMENT '5日成交量均线';
+-- ALTER TABLE ts_stock_data ADD COLUMN vol_ma_10 double(255,4) DEFAULT NULL COMMENT '10日成交量均线';

@@ -52,6 +52,13 @@ class StockData(Base):
     bb_mid = Column(Float)
     bb_low = Column(Float)
     obv = Column(Float)
+    atr = Column(Float)
+    adx = Column(Float)
+    plus_di = Column(Float)
+    minus_di = Column(Float)
+    cci = Column(Float)
+    vol_ma_5 = Column(Float)
+    vol_ma_10 = Column(Float)
     cross_signals = Column(Text)
     percentile_ranks = Column(Text)
     

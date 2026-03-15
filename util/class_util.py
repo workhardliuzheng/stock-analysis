@@ -8,11 +8,32 @@ _ENTITY_PARAMS_CACHE = {}
 class ClassUtil:
     @staticmethod
     def create_entities_from_data(entity_class, data):
+        """
+        从数据库查询结果创建实体对象
+        
+        Args:
+            entity_class: 实体类
+            data: 数据库返回的 Row 对象（支持 _mapping 属性）或元组
+        
+        Returns:
+            Entity 实例
+        """
         # 获取实体类的所有属性名称
         entity_attributes = entity_class.__init__.__code__.co_varnames[1:]  # 去掉 'self'
 
-        # 创建字典，将数据按属性名称映射
-        kwargs = dict(zip(entity_attributes, data))
+        # 检查数据是否有 _mapping 属性（SQLAlchemy Row 对象）
+        if hasattr(data, '_mapping'):
+            # 使用列名映射（更安全）
+            data_dict = dict(data._mapping)
+            kwargs = {}
+            for attr in entity_attributes:
+                if attr in data_dict:
+                    kwargs[attr] = data_dict[attr]
+                else:
+                    kwargs[attr] = None
+        else:
+            # 兼容旧的位置映射方式
+            kwargs = dict(zip(entity_attributes, data))
 
         # 使用 **kwargs 创建实体对象
         entity = entity_class(**kwargs)

@@ -24,6 +24,10 @@ class TechnicalIndicatorCalculator:
     - KDJ
     - 布林带
     - OBV
+    - ATR (平均真实波幅)
+    - ADX/DMI (趋势强度)
+    - CCI (商品通道指数)
+    - 成交量均线
     
     使用示例:
         # 指数数据：完整技术指标
@@ -52,12 +56,20 @@ class TechnicalIndicatorCalculator:
                  include_bollinger: bool = True,
                  include_rsi: bool = True,
                  include_obv: bool = True,
+                 include_atr: bool = True,
+                 include_adx: bool = True,
+                 include_cci: bool = True,
+                 include_vol_ma: bool = True,
                  price_col: str = 'close',
                  date_col: str = 'trade_date',
                  macd_config: Optional[dict] = None,
                  kdj_config: Optional[dict] = None,
                  bollinger_config: Optional[dict] = None,
-                 rsi_period: int = 14):
+                 rsi_period: int = 14,
+                 atr_period: int = 14,
+                 adx_period: int = 14,
+                 cci_period: int = 20,
+                 vol_ma_periods: Optional[List[int]] = None):
         """
         初始化技术指标计算器
         
@@ -70,12 +82,20 @@ class TechnicalIndicatorCalculator:
             include_bollinger: 是否计算布林带
             include_rsi: 是否计算 RSI
             include_obv: 是否计算 OBV
+            include_atr: 是否计算 ATR
+            include_adx: 是否计算 ADX/DMI
+            include_cci: 是否计算 CCI
+            include_vol_ma: 是否计算成交量均线
             price_col: 价格列名，默认 'close'
             date_col: 日期列名，默认 'trade_date'
             macd_config: MACD 配置，默认 {'fast': 12, 'slow': 26, 'signal': 9}
             kdj_config: KDJ 配置，默认 {'fastk': 9, 'slowk': 3, 'slowd': 3}
             bollinger_config: 布林带配置，默认 {'period': 20, 'nbdev': 2}
             rsi_period: RSI 周期，默认 14
+            atr_period: ATR 周期，默认 14
+            adx_period: ADX 周期，默认 14
+            cci_period: CCI 周期，默认 20
+            vol_ma_periods: 成交量均线周期列表，默认 [5, 10]
         """
         self.ma_periods = ma_periods or self.DEFAULT_MA_PERIODS
         self.wma_periods = wma_periods or self.DEFAULT_WMA_PERIODS
@@ -85,9 +105,17 @@ class TechnicalIndicatorCalculator:
         self.include_bollinger = include_bollinger
         self.include_rsi = include_rsi
         self.include_obv = include_obv
+        self.include_atr = include_atr
+        self.include_adx = include_adx
+        self.include_cci = include_cci
+        self.include_vol_ma = include_vol_ma
         self.price_col = price_col
         self.date_col = date_col
         self.rsi_period = rsi_period
+        self.atr_period = atr_period
+        self.adx_period = adx_period
+        self.cci_period = cci_period
+        self.vol_ma_periods = vol_ma_periods or [5, 10]
         
         # 默认配置
         self.macd_config = macd_config or {'fast': 12, 'slow': 26, 'signal': 9}
@@ -142,6 +170,28 @@ class TechnicalIndicatorCalculator:
         # 计算 OBV (需要 vol)
         if self.include_obv and 'vol' in result_df.columns:
             result_df = self._calculate_obv(result_df, close)
+        
+        # 计算 ATR (需要 high, low)
+        if self.include_atr and 'high' in result_df.columns and 'low' in result_df.columns:
+            high = result_df['high'].values.astype(float)
+            low = result_df['low'].values.astype(float)
+            result_df = self._calculate_atr(result_df, high, low, close)
+        
+        # 计算 ADX/DMI (需要 high, low)
+        if self.include_adx and 'high' in result_df.columns and 'low' in result_df.columns:
+            high = result_df['high'].values.astype(float)
+            low = result_df['low'].values.astype(float)
+            result_df = self._calculate_adx(result_df, high, low, close)
+        
+        # 计算 CCI (需要 high, low)
+        if self.include_cci and 'high' in result_df.columns and 'low' in result_df.columns:
+            high = result_df['high'].values.astype(float)
+            low = result_df['low'].values.astype(float)
+            result_df = self._calculate_cci(result_df, high, low, close)
+        
+        # 计算成交量均线 (需要 vol)
+        if self.include_vol_ma and 'vol' in result_df.columns:
+            result_df = self._calculate_vol_ma(result_df)
         
         return result_df
     
@@ -239,4 +289,32 @@ class TechnicalIndicatorCalculator:
         """计算 OBV 指标"""
         volume = df['vol'].values.astype(float)
         df['obv'] = talib.OBV(close, volume)
+        return df
+    
+    def _calculate_atr(self, df: pd.DataFrame, high: np.ndarray, low: np.ndarray,
+                       close: np.ndarray) -> pd.DataFrame:
+        """计算 ATR (平均真实波幅) 指标"""
+        df['atr'] = talib.ATR(high, low, close, timeperiod=self.atr_period)
+        return df
+    
+    def _calculate_adx(self, df: pd.DataFrame, high: np.ndarray, low: np.ndarray,
+                       close: np.ndarray) -> pd.DataFrame:
+        """计算 ADX/DMI (趋势强度) 指标"""
+        df['adx'] = talib.ADX(high, low, close, timeperiod=self.adx_period)
+        df['plus_di'] = talib.PLUS_DI(high, low, close, timeperiod=self.adx_period)
+        df['minus_di'] = talib.MINUS_DI(high, low, close, timeperiod=self.adx_period)
+        return df
+    
+    def _calculate_cci(self, df: pd.DataFrame, high: np.ndarray, low: np.ndarray,
+                       close: np.ndarray) -> pd.DataFrame:
+        """计算 CCI (商品通道指数) 指标"""
+        df['cci'] = talib.CCI(high, low, close, timeperiod=self.cci_period)
+        return df
+    
+    def _calculate_vol_ma(self, df: pd.DataFrame) -> pd.DataFrame:
+        """计算成交量均线"""
+        volume = df['vol'].values.astype(float)
+        for period in self.vol_ma_periods:
+            col_name = f'vol_ma_{period}'
+            df[col_name] = talib.SMA(volume, timeperiod=period)
         return df

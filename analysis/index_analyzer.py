@@ -1,7 +1,7 @@
 """
 指数技术分析器（重构版）
 
-整合交叉信号检测、历史百分位计算、可视化图表生成
+整合交叉信号检测、历史百分位计算、多因子评分、ML预测、信号生成、回测
 """
 
 import pandas as pd
@@ -16,6 +16,9 @@ from entity.stock_data import StockData
 from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from analysis.cross_signal_detector import CrossSignalDetector
 from analysis.percentile_calculator import PercentileCalculator
+from analysis.multi_factor_scorer import MultiFactorScorer
+from analysis.signal_generator import SignalGenerator
+from analysis.backtester import Backtester
 from util.class_util import ClassUtil
 from util.date_util import TimeUtils
 
@@ -27,14 +30,18 @@ class IndexAnalyzer:
     功能：
     1. 计算交叉信号（均线金叉死叉、MACD金叉死叉）
     2. 计算历史百分位（偏离率、成交量、MACD等）
-    3. 生成多维度分析图表
-    4. 提供当前市场状态摘要
+    3. 多因子综合评分（趋势/动量/成交量/估值/波动率）
+    4. 机器学习预测（XGBoost，可选）
+    5. 信号整合与回测
+    6. 生成多维度分析图表
+    7. 提供当前市场状态摘要
     
     使用示例:
         analyzer = IndexAnalyzer('000001.SH')
         df = analyzer.analyze()
+        signal = analyzer.get_current_signal()
+        results = analyzer.backtest()
         analyzer.generate_charts(save_path='output/')
-        status = analyzer.get_current_status()
     """
     
     def __init__(self, 
@@ -61,6 +68,9 @@ class IndexAnalyzer:
         # 初始化计算器
         self.cross_detector = CrossSignalDetector()
         self.percentile_calculator = PercentileCalculator(lookback_years=lookback_years)
+        self.multi_factor_scorer = MultiFactorScorer()
+        self.signal_generator = SignalGenerator()
+        self._ml_predictor = None  # 延迟加载，避免强制依赖 xgboost
         
         # 加载数据
         self.mapper = SixtyIndexMapper()
@@ -96,11 +106,14 @@ class IndexAnalyzer:
         
         return df
     
-    def analyze(self) -> pd.DataFrame:
+    def analyze(self, include_ml: bool = True) -> pd.DataFrame:
         """
         执行完整分析流程
         
-        计算交叉信号和历史百分位，更新DataFrame
+        计算交叉信号、历史百分位、多因子评分，可选ML预测，最终生成信号
+        
+        Args:
+            include_ml: 是否包含 ML 预测 (需要 xgboost/sklearn)
         
         Returns:
             pd.DataFrame: 包含分析结果的DataFrame
@@ -117,7 +130,44 @@ class IndexAnalyzer:
         print(f"正在计算 {self.name} 的历史百分位...")
         self.data = self.percentile_calculator.calculate(self.data)
         
+        # 多因子评分
+        print(f"正在计算 {self.name} 的多因子评分...")
+        self.data = self.multi_factor_scorer.calculate(self.data)
+        
+        # ML 预测（使用滚动预测避免数据泄露）
+        if include_ml:
+            try:
+                predictor = self._get_ml_predictor()
+                print(f"正在滚动预测 {self.name}（避免数据泄露）...")
+                self.data, metrics = predictor.train_and_predict(self.data)
+                print(f"  ML验证指标: {metrics}")
+            except ImportError as e:
+                print(f"  ML模块不可用({e})，跳过ML预测")
+                self.data['ml_probability'] = 0.5
+                self.data['ml_probability_raw'] = 0.5
+                self.data['ml_signal'] = 'HOLD'
+            except Exception as e:
+                print(f"  ML预测失败: {e}，使用默认值")
+                self.data['ml_probability'] = 0.5
+                self.data['ml_probability_raw'] = 0.5
+                self.data['ml_signal'] = 'HOLD'
+        else:
+            self.data['ml_probability'] = 0.5
+            self.data['ml_probability_raw'] = 0.5
+            self.data['ml_signal'] = 'HOLD'
+        
+        # 信号整合
+        print(f"正在生成 {self.name} 的最终信号...")
+        self.data = self.signal_generator.generate(self.data)
+        
         return self.data
+    
+    def _get_ml_predictor(self):
+        """延迟加载 ML 预测器"""
+        if self._ml_predictor is None:
+            from analysis.ml_predictor import MLPredictor
+            self._ml_predictor = MLPredictor()
+        return self._ml_predictor
     
     def get_current_status(self) -> Dict:
         """
@@ -311,6 +361,115 @@ class IndexAnalyzer:
             show=show
         )
     
+    def get_current_signal(self) -> Dict:
+        """
+        获取当日交易信号
+        
+        Returns:
+            Dict: 包含信号详情的字典
+        """
+        if len(self.data) == 0 or 'final_signal' not in self.data.columns:
+            return {}
+        
+        latest = self.data.iloc[-1]
+        
+        signal_info = {
+            'ts_code': self.ts_code,
+            'name': self.name,
+            'trade_date': str(latest.get('trade_date', '')),
+            'close': latest.get('close'),
+            'pct_chg': latest.get('pct_chg'),
+            'final_signal': latest.get('final_signal', 'HOLD'),
+            'final_confidence': latest.get('final_confidence', 0.5),
+            'factor_score': latest.get('factor_score', 50),
+            'factor_signal': latest.get('factor_signal', 'HOLD'),
+            'trend_state': latest.get('trend_state', 'sideways'),
+            'ml_probability': latest.get('ml_probability', 0.5),
+            'ml_signal': latest.get('ml_signal', 'HOLD'),
+        }
+        
+        # 解析因子明细
+        factor_detail = latest.get('factor_detail')
+        if factor_detail and isinstance(factor_detail, str):
+            import json
+            try:
+                signal_info['factor_detail'] = json.loads(factor_detail)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        return signal_info
+    
+    def print_current_signal(self):
+        """打印当日交易信号"""
+        sig = self.get_current_signal()
+        if not sig:
+            print(f"{self.ts_code} 无信号数据，请先运行 analyze()")
+            return
+        
+        signal_text = sig['final_signal']
+        signal_icon = {'BUY': '[买入]', 'SELL': '[卖出]', 'HOLD': '[持有]'}
+        
+        print(f"\n{'=' * 60}")
+        print(f"  {sig['name']} ({sig['ts_code']}) 交易信号")
+        print(f"{'=' * 60}")
+        print(f"  日期: {sig['trade_date']}  收盘: {sig.get('close', 0):.2f}  涨跌: {sig.get('pct_chg', 0):.2f}%")
+        print(f"\n  >>> 最终信号: {signal_icon.get(signal_text, signal_text)} "
+              f"置信度: {sig.get('final_confidence', 0):.1%}")
+        print(f"  趋势状态: {sig.get('trend_state', 'N/A')}")
+        print(f"\n  多因子评分: {sig.get('factor_score', 0):.1f}/100 → {sig.get('factor_signal', 'N/A')}")
+        print(f"  ML上涨概率: {sig.get('ml_probability', 0):.1%} → {sig.get('ml_signal', 'N/A')}")
+        
+        detail = sig.get('factor_detail', {})
+        if detail:
+            print(f"\n  因子明细:")
+            for k, v in detail.items():
+                print(f"    {k}: {v:.1f}")
+        
+        print(f"{'=' * 60}\n")
+    
+    def backtest(self, strategy: str = 'all') -> dict:
+        """
+        运行回测
+        
+        Args:
+            strategy: 'factor' / 'ml' / 'combined' / 'all'
+        
+        Returns:
+            dict: 回测结果
+        """
+        if 'final_signal' not in self.data.columns:
+            print("请先运行 analyze() 生成信号")
+            return {}
+        
+        bt = Backtester()
+        
+        if strategy == 'all':
+            strategies = {}
+            if 'factor_signal' in self.data.columns:
+                strategies['多因子策略'] = 'factor_signal'
+            if 'ml_signal' in self.data.columns:
+                strategies['ML策略'] = 'ml_signal'
+            if 'final_signal' in self.data.columns:
+                strategies['混合策略'] = 'final_signal'
+            
+            results = bt.compare_strategies(self.data, strategies)
+            bt.print_comparison(results, index_name=f"{self.name} ({self.ts_code})")
+            return results
+        else:
+            col_map = {
+                'factor': 'factor_signal',
+                'ml': 'ml_signal',
+                'combined': 'final_signal',
+            }
+            col = col_map.get(strategy, 'final_signal')
+            if col not in self.data.columns:
+                print(f"信号列 {col} 不存在")
+                return {}
+            
+            result = bt.run(self.data, col)
+            bt.print_report(result, index_name=f"{self.name} ({self.ts_code})")
+            return result
+    
     def get_data(self) -> pd.DataFrame:
         """
         获取分析后的数据
@@ -321,13 +480,15 @@ class IndexAnalyzer:
         return self.data.copy()
 
 
-def analyze_all_indices(save_charts: bool = True, print_status: bool = True):
+def analyze_all_indices(save_charts: bool = True, print_status: bool = True,
+                        include_ml: bool = True):
     """
     分析所有指数
     
     Args:
         save_charts: 是否保存图表
         print_status: 是否打印状态摘要
+        include_ml: 是否包含 ML 预测
     """
     ts_codes = list(constant.TS_CODE_NAME_DICT.keys())
     
@@ -335,16 +496,71 @@ def analyze_all_indices(save_charts: bool = True, print_status: bool = True):
         try:
             print(f"\n开始分析 {constant.TS_CODE_NAME_DICT.get(ts_code, ts_code)}...")
             analyzer = IndexAnalyzer(ts_code)
-            analyzer.analyze()
+            analyzer.analyze(include_ml=include_ml)
             
             if print_status:
-                analyzer.print_current_status()
+                analyzer.print_current_signal()
             
             if save_charts:
                 analyzer.generate_charts()
                 
         except Exception as e:
             print(f"分析 {ts_code} 时出错: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True):
+    """
+    生成指数交易信号
+    
+    Args:
+        ts_code: 指定指数代码，None 表示全部
+        include_ml: 是否包含 ML 预测
+    """
+    if ts_code:
+        codes = [ts_code]
+    else:
+        codes = list(constant.TS_CODE_NAME_DICT.keys())
+    
+    for code in codes:
+        try:
+            analyzer = IndexAnalyzer(code)
+            analyzer.analyze(include_ml=include_ml)
+            analyzer.print_current_signal()
+        except Exception as e:
+            print(f"生成 {code} 信号时出错: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
+                         include_ml: bool = True):
+    """
+    回测指数策略
+    
+    Args:
+        ts_code: 指定指数代码，None 表示全部
+        strategy: 策略类型 factor/ml/combined/all
+        include_ml: 是否包含 ML 预测
+    """
+    if ts_code:
+        codes = [ts_code]
+    else:
+        codes = list(constant.TS_CODE_NAME_DICT.keys())
+    
+    for code in codes:
+        try:
+            name = constant.TS_CODE_NAME_DICT.get(code, code)
+            print(f"\n{'#' * 60}")
+            print(f"  回测 {name} ({code})")
+            print(f"{'#' * 60}")
+            
+            analyzer = IndexAnalyzer(code)
+            analyzer.analyze(include_ml=include_ml)
+            analyzer.backtest(strategy=strategy)
+        except Exception as e:
+            print(f"回测 {code} 时出错: {e}")
             import traceback
             traceback.print_exc()
 
