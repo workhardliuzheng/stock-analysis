@@ -19,6 +19,7 @@ from analysis.percentile_calculator import PercentileCalculator
 from analysis.multi_factor_scorer import MultiFactorScorer
 from analysis.signal_generator import SignalGenerator
 from analysis.backtester import Backtester
+from analysis.position_manager import PositionManager, PositionConfig
 from util.class_util import ClassUtil
 from util.date_util import TimeUtils
 
