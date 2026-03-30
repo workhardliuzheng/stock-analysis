@@ -269,11 +269,13 @@ class PositionManager:
             predicted_return = data.get('predicted_return', 0)
             volatility = data.get('volatility', 0.02)
             
-            # 风险调整后收益
-            adjusted_return = predicted_return - 0.5 * risk_aversion * (volatility ** 2)
+            # 风险调整后收益 (使用年化波动率)
+            # 假设 volatility 是日波动率，年化 = volatility * sqrt(252)
+            annualized_vol = volatility * 3.0  # 简化：约等于年化波动率
+            adjusted_return = predicted_return - 0.5 * risk_aversion * (annualized_vol ** 2)
             
             if adjusted_return > 0:
-                scores[code] = adjusted_return
+                scores[code] = max(adjusted_return, 0.001)  # 至少0.1%
         
         # 如果所有指数风险调整后收益都为负，建议空仓
         if not scores:
