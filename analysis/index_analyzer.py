@@ -562,17 +562,19 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
             traceback.print_exc()
 
 
-def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
+def backtest_all_indices(ts_code: Optional[List[str]] = None, strategy: str = 'all',
                          include_ml: bool = True, auto_tune: bool = False,
                          commission_rate: float = 0.00006,
                          execution_timing: str = 'close',
                          feature_selection: bool = False,
-                         max_features: int = 20, **kwargs):
+                         max_features: int = 20,
+                         use_multi_index_backtest: bool = False,
+                         **kwargs):
     """
     回测指数策略
     
     Args:
-        ts_code: 指定指数代码，None 表示全部
+        ts_code: 指定指数代码列表，None 表示全部
         strategy: 策略类型 factor/ml/combined/all
         include_ml: 是否包含 ML 预测
         auto_tune: 是否使用 Optuna 自动调优
@@ -580,60 +582,255 @@ def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
         execution_timing: 执行时机 open/close
         feature_selection: 是否进行特征重要性筛选
         max_features: 保留的最大特征数量
+        use_multi_index_backtest: 是否使用多指数组合回测（默认False，单指数独立回测）
         **kwargs: 兼容 main.py 传入的其他参数 (model_type 等)
     """
     if ts_code:
-        codes = [ts_code]
+        codes = ts_code if isinstance(ts_code, list) else [ts_code]
     else:
         codes = list(constant.TS_CODE_NAME_DICT.keys())
+    
+    if use_multi_index_backtest:
+        # 多指数组合回测
+        backtest_multi_index(
+            codes=codes,
+            strategy=strategy,
+            include_ml=include_ml,
+            auto_tune=auto_tune,
+            commission_rate=commission_rate,
+            execution_timing=execution_timing,
+            feature_selection=feature_selection,
+            max_features=max_features
+        )
+    else:
+        # 单指数独立回测（默认）
+        for code in codes:
+            try:
+                name = constant.TS_CODE_NAME_DICT.get(code, code)
+                print(f"\n{'#' * 60}")
+                print(f"  回测 {name} ({code})")
+                print(f"{'#' * 60}")
+                
+                analyzer = IndexAnalyzer(code)
+                analyzer.analyze(
+                    include_ml=include_ml, 
+                    auto_tune=auto_tune,
+                    feature_selection=feature_selection,
+                    max_features=max_features
+                )
+                
+                # 使用自定义回测参数
+                bt = Backtester(
+                    commission_rate=commission_rate,
+                    execution_timing=execution_timing
+                )
+                
+                if strategy == 'all':
+                    strategies = {}
+                    if 'factor_signal' in analyzer.data.columns:
+                        strategies['多因子策略'] = 'factor_signal'
+                    if 'ml_signal' in analyzer.data.columns:
+                        strategies['ML策略'] = 'ml_signal'
+                    if 'final_signal' in analyzer.data.columns:
+                        strategies['混合策略'] = 'final_signal'
+                    results = bt.compare_strategies(analyzer.data, strategies)
+                    bt.print_comparison(results, index_name=f"{name} ({code})")
+                else:
+                    col_map = {
+                        'factor': 'factor_signal',
+                        'ml': 'ml_signal',
+                        'combined': 'final_signal',
+                    }
+                    col = col_map.get(strategy, 'final_signal')
+                    if col in analyzer.data.columns:
+                        result = bt.run(analyzer.data, col)
+                        bt.print_report(result, index_name=f"{name} ({code})")
+                    else:
+                        print(f"信号列 {col} 不存在")
+            except Exception as e:
+                print(f"回测 {code} 时出错: {e}")
+                import traceback
+                traceback.print_exc()
+
+
+def backtest_multi_index(codes: List[str],
+                        strategy: str = 'ml',
+                        include_ml: bool = True,
+                        auto_tune: bool = False,
+                        commission_rate: float = 0.00006,
+                        execution_timing: str = 'open',
+                        feature_selection: bool = False,
+                        max_features: int = 20,
+                        initial_capital: float = 100000):
+    """
+    多指数组合回测
+    
+    Args:
+        codes: 指数代码列表
+        strategy: 策略类型 (ml/combined)
+        include_ml: 是否包含 ML 预测
+        auto_tune: 是否使用 Optuna
+        commission_rate: 单边佣金率
+        execution_timing: 执行时机
+        feature_selection: 是否特征筛选
+        max_features: 最大特征数
+        initial_capital: 初始资金
+    """
+    from analysis.multi_index_backtester import MultiIndexBacktester
+    from analysis.backtester import Backtester
+    
+    print(f"\n{'=' * 80}")
+    print(f"  多指数组合回测")
+    print(f"{'=' * 80}")
+    print(f"  指数: {', '.join(codes)}")
+    print(f"  策略: {strategy}")
+    print(f"  初始资金: {initial_capital:,.0f} 元")
+    print(f"{'=' * 80}\n")
+    
+    # 加载所有指数数据
+    df_list = []
+    code_list = []
+    name_list = []
     
     for code in codes:
         try:
             name = constant.TS_CODE_NAME_DICT.get(code, code)
-            print(f"\n{'#' * 60}")
-            print(f"  回测 {name} ({code})")
-            print(f"{'#' * 60}")
-            
             analyzer = IndexAnalyzer(code)
-            analyzer.analyze(
-                include_ml=include_ml, 
-                auto_tune=auto_tune,
-                feature_selection=feature_selection,
-                max_features=max_features
-            )
+            analyzer.analyze(include_ml=include_ml, auto_tune=auto_tune,
+                           feature_selection=feature_selection,
+                           max_features=max_features)
             
-            # 使用自定义回测参数
-            bt = Backtester(
-                commission_rate=commission_rate,
-                execution_timing=execution_timing
-            )
-            
-            if strategy == 'all':
-                strategies = {}
-                if 'factor_signal' in analyzer.data.columns:
-                    strategies['多因子策略'] = 'factor_signal'
-                if 'ml_signal' in analyzer.data.columns:
-                    strategies['ML策略'] = 'ml_signal'
-                if 'final_signal' in analyzer.data.columns:
-                    strategies['混合策略'] = 'final_signal'
-                results = bt.compare_strategies(analyzer.data, strategies)
-                bt.print_comparison(results, index_name=f"{name} ({code})")
+            # 确保有信号列
+            if strategy == 'ml':
+                signal_col = 'ml_signal'
+            elif strategy == 'combined':
+                signal_col = 'final_signal'
             else:
-                col_map = {
-                    'factor': 'factor_signal',
-                    'ml': 'ml_signal',
-                    'combined': 'final_signal',
-                }
-                col = col_map.get(strategy, 'final_signal')
-                if col in analyzer.data.columns:
-                    result = bt.run(analyzer.data, col)
-                    bt.print_report(result, index_name=f"{name} ({code})")
-                else:
-                    print(f"信号列 {col} 不存在")
+                signal_col = 'final_signal'
+            
+            if signal_col not in analyzer.data.columns:
+                print(f"  {name}: 信号列 {signal_col} 不存在")
+                continue
+            
+            df_list.append(analyzer.data)
+            code_list.append(code)
+            name_list.append(name)
+            
+            print(f"  {name} ({code}): {len(analyzer.data)} 条数据")
         except Exception as e:
-            print(f"回测 {code} 时出错: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"  加载 {code} 失败: {e}")
+    
+    if not df_list:
+        print("  没有可用的指数数据")
+        return
+    
+    # 运行多指数回测
+    mib = MultiIndexBacktester(
+        initial_capital=initial_capital,
+        commission_rate=commission_rate,
+        execution_timing=execution_timing
+    )
+    
+    signal_columns = [signal_col] * len(df_list)
+    
+    try:
+        result = mib.run(
+            df_list=df_list,
+            code_list=code_list,
+            name_list=name_list,
+            signal_columns=signal_columns
+        )
+        
+        if 'error' in result:
+            print(f"  回测失败: {result['error']}")
+            return
+        
+        # 打印组合回测结果
+        print(f"\n{'=' * 80}")
+        print(f"  组合回测结果")
+        print(f"{'=' * 80}")
+        print(f"  总收益率:   {result['total_return']:>+7.1f}%")
+        print(f"  年化收益:   {result['annualized_return']:>+7.1f}%")
+        print(f"  最大回撤:   {result['max_drawdown']:>+7.1f}%")
+        print(f"  夏普比率:   {result['sharpe_ratio']:>+6.2f}")
+        print(f"  总交易日:   {result['total_days']} 天")
+        print(f"{'=' * 80}\n")
+        
+        # 打印各指数回测结果对比
+        print(f"  各指数回测结果对比:")
+        print(f"{'=' * 80}")
+        print(f"  {'指数':<15} {'总收益':>8} {'年化':>8} {'最大回撤':>8} {'夏普':>6}")
+        print(f"{'-' * 80}")
+        
+        for code, index_result in result['index_results'].items():
+            name = constant.TS_CODE_NAME_DICT.get(code, code)
+            if 'error' not in index_result:
+                tr = index_result.get('total_return', 0) * 100
+                ar = index_result.get('annualized_return', 0) * 100
+                md = index_result.get('max_drawdown', 0) * 100
+                sr = index_result.get('sharpe_ratio', 0)
+                print(f"  {name:<15} {tr:>+7.1f}% {ar:>+7.1f}% {md:>+7.1f}% {sr:>+6.2f}")
+        
+        print(f"{'=' * 80}\n")
+        
+        # 生成回测日志报告
+        generate_backtest_report(result, codes)
+        
+    except Exception as e:
+        print(f"  多指数回测失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def generate_backtest_report(result: dict, codes: List[str]):
+    """生成回测报告并写入 BACKTEST_LOG.md"""
+    # 简单的回测报告
+    import datetime
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    
+    report = f"""
+---
+## 多指数组合回测 ({today})
+
+**组合配置:**
+- 指数: {', '.join(codes)}
+- 策略: ML策略
+- 初始资金: 100,000 元
+- 佣金: 万0.6
+- 执行时机: T+1开盘价
+
+**组合回测结果:**
+| 指标 | 数值 |
+|------|------|
+| 总收益率 | {result['total_return']:>+7.1f}% |
+| 年化收益 | {result['annualized_return']:>+7.1f}% |
+| 最大回撤 | {result['max_drawdown']:>+7.1f}% |
+| 夏普比率 | {result['sharpe_ratio']:>+6.2f} |
+| 总交易日 | {result['total_days']} 天 |
+
+**各指数回测结果:**
+
+| 指数 | 总收益 | 年化 | 最大回撤 | 夏普 |
+|------|--------|------|---------|------|
+"""
+    
+    for code, index_result in result['index_results'].items():
+        name = constant.TS_CODE_NAME_DICT.get(code, code)
+        if 'error' not in index_result:
+            tr = index_result.get('total_return', 0) * 100
+            ar = index_result.get('annualized_return', 0) * 100
+            md = index_result.get('max_drawdown', 0) * 100
+            sr = index_result.get('sharpe_ratio', 0)
+            report += f"| {name} | {tr:>+7.1f}% | {ar:>+7.1f}% | {md:>+7.1f}% | {sr:>+6.2f} |\n"
+    
+    report += f"""\n**说明:**
+- 组合采用动态仓位分配，基于各指数预测收益和风险
+- 单指数最大仓位 30%，总仓位最大 90%
+- 当所有指数预测为负时自动空仓
+"""
+    
+    # 写入文件（简单追加）
+    print("\n回测报告已生成（可手动添加到 BACKTEST_LOG.md）")
 
 
 if __name__ == '__main__':

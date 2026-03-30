@@ -190,8 +190,10 @@ if __name__ == "__main__":
     
     elif args.mode == 'backtest':
         from analysis.index_analyzer import backtest_all_indices
+        # 支持多个指数，用逗号分隔
+        codes = args.ts_code.split(',') if args.ts_code else None
         backtest_all_indices(
-            ts_code=args.ts_code,
+            ts_code=codes,
             strategy=args.strategy,
             include_ml=not args.no_ml,
             auto_tune=args.auto_tune,
