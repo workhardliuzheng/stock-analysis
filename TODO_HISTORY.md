@@ -43,9 +43,9 @@
 
 **技术实现**:
 1. advanced_position_manager.py: 新增高级仓位管理模块
-2. ml_predictor.py: 支持指数特定阈值配置
-3. multi_index_backtester.py: 集成止损和动态调仓逻辑
-4. TODO.md/TODO_HISTORY.md: 更新记录
+2. position_manager.py: 兼容 AdvancedPositionConfig
+3. multi_index_backtester.py: 集成 V6 计算方法
+4. index_analyzer.py: 正确传递仓位配置
 
 **差异化阈值配置**:
 | 指数 | 阈值 | 风险等级 | 大盘 | 中等 | 小盘 | 协助提升收益 |
@@ -65,7 +65,7 @@
 
 ---
 
-### 2026-03-29 (v4)
+### 2026-03-30 (v5)
 
 **更新内容**:
 1. ✅ 更新仓位管理优化项状态为"已实现"（第4阶段：多指数分散持仓 + 阈值优化 + 小盘股覆盖 + 市场择时）
@@ -107,9 +107,9 @@
 
 **技术实现**:
 1. advanced_position_manager.py: 新增高级仓位管理模块
-2. ml_predictor.py: 支持指数特定阈值配置
-3. multi_index_backtester.py: 集成止损和动态调仓逻辑
-4. TODO.md/TODO_HISTORY.md: 更新记录
+2. position_manager.py: 兼容 AdvancedPositionConfig
+3. multi_index_backtester.py: 集成 V6 计算方法
+4. index_analyzer.py: 正确传递仓位配置
 
 **差异化阈值配置**:
 | 指数 | 阈值 | 风险等级 | 大盘 | 中等 | 小盘 | 协助提升收益 |
@@ -129,7 +129,7 @@
 
 ---
 
-### 2026-03-29 (v4)
+### 2026-03-30 (v5)
 
 **更新内容**:
 1. ✅ 差异化阈值：大盘0.05%，小盘0.03%，科创50/中证1000更激进
@@ -147,9 +147,9 @@
 
 **技术实现**:
 1. advanced_position_manager.py: 新增高级仓位管理模块
-2. ml_predictor.py: 支持指数特定阈值配置
-3. multi_index_backtester.py: 集成止损和动态调仓逻辑
-4. TODO.md/TODO_HISTORY.md: 更新记录
+2. position_manager.py: 兼容 AdvancedPositionConfig
+3. multi_index_backtester.py: 集成 V6 计算方法
+4. index_analyzer.py: 正确传递仓位配置
 
 **差异化阈值配置**:
 | 指数 | 阈值 | 风险等级 | 大盘 | 中等 | 小盘 | 协助提升收益 |
@@ -169,7 +169,7 @@
 
 ---
 
-### 2026-03-29 (v4)
+### 2026-03-30 (v5)
 
 **更新内容**:
 1. ✅ 更新仓位管理优化项状态为"已实现"（第4阶段：多指数分散持仓）
