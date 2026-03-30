@@ -176,6 +176,13 @@ class MultiIndexBacktester:
                     current_signals[code] = signal_data
             
             # 仓位管理（支持 PositionManager 和 AdvancedPositionManager）
+            # 先计算组合价值（用于高级仓位管理器）
+            total_value = cash
+            for code, shares in positions.items():
+                df = df_list[code_list.index(code)]
+                close_price = df.iloc[day_idx]['close']
+                total_value += shares * close_price
+            
             if hasattr(self.position_manager, 'calculate_positions_v6'):
                 # 使用 AdvancedPositionManager 的新方法
                 new_positions = self.position_manager.calculate_positions_v6(
