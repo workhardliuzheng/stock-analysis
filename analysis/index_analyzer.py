@@ -742,16 +742,16 @@ def backtest_multi_index(codes: Optional[List[str]] = None,
     # 运行多指数回测
     from analysis.advanced_position_manager import AdvancedPositionConfig
     
-    # 创建高级仓位配置
-    position_config = AdvancedPositionConfig()
+    # 创建仓位管理器
+    advanced_config = AdvancedPositionConfig()
     
     mib = MultiIndexBacktester(
         initial_capital=initial_capital,
         commission_rate=commission_rate,
-        position_manager=mib_position_manager if 'mib_position_manager' in dir() else None,
+        position_manager=None,
         execution_timing=execution_timing
     )
-    mib.position_manager.config = position_config
+    mib.position_manager.config = advanced_config
     
     signal_columns = [signal_col] * len(df_list)
     
