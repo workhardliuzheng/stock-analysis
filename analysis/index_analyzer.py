@@ -653,7 +653,7 @@ def backtest_all_indices(ts_code: Optional[List[str]] = None, strategy: str = 'a
                 traceback.print_exc()
 
 
-def backtest_multi_index(codes: List[str],
+def backtest_multi_index(codes: Optional[List[str]] = None,
                         strategy: str = 'ml',
                         include_ml: bool = True,
                         auto_tune: bool = False,
@@ -661,12 +661,13 @@ def backtest_multi_index(codes: List[str],
                         execution_timing: str = 'open',
                         feature_selection: bool = False,
                         max_features: int = 20,
-                        initial_capital: float = 100000):
+                        initial_capital: float = 100000,
+                        use_market_timing: bool = True):
     """
     多指数组合回测
     
     Args:
-        codes: 指数代码列表
+        codes: 指数代码列表，None 表示所有8个指数
         strategy: 策略类型 (ml/combined)
         include_ml: 是否包含 ML 预测
         auto_tune: 是否使用 Optuna
@@ -675,9 +676,23 @@ def backtest_multi_index(codes: List[str],
         feature_selection: 是否特征筛选
         max_features: 最大特征数
         initial_capital: 初始资金
+        use_market_timing: 是否启用市场择时（沪深300>MA200才开仓）
     """
     from analysis.multi_index_backtester import MultiIndexBacktester
     from analysis.backtester import Backtester
+    
+    # 如果未指定指数，使用全部8个指数
+    if codes is None:
+        codes = list(constant.TS_CODE_NAME_DICT.keys())
+    
+    print(f"\n{'=' * 80}")
+    print(f"  多指数组合回测")
+    print(f"{'=' * 80}")
+    print(f"  指数: {', '.join([constant.TS_CODE_NAME_DICT.get(c, c) for c in codes])}")
+    print(f"  策略: {strategy}")
+    print(f"  初始资金: {initial_capital:,.0f} 元")
+    print(f"  市场择时: {'启用' if use_market_timing else '关闭'}")
+    print(f"{'=' * 80}\n")
     
     print(f"\n{'=' * 80}")
     print(f"  多指数组合回测")

@@ -94,7 +94,7 @@ class MLPredictor:
     # 信号阈值 (默认值，实际使用自适应阈值)
     BUY_THRESHOLD = 0.1        # 默认买入阈值 (会被自适应阈值覆盖)
     SELL_THRESHOLD = -0.1      # 默认卖出阈值 (会被自适应阈值覆盖)
-    THRESHOLD_VOL_FACTOR = 0.12  # 自适应阈值 = 波动率 * 此因子
+    THRESHOLD_VOL_FACTOR = 0.08  # 自适应阈值 = 波动率 * 此因子（从0.12降低至0.08，增加30%信号）
 
     # Optuna 配置
     OPTUNA_N_TRIALS = 50       # 搜索次数

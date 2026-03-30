@@ -67,7 +67,9 @@ class MultiIndexBacktester:
             name_list: List[str],
             signal_columns: List[str] = None,
             use_ml_signals: bool = True,
-            position_config: PositionConfig = None) -> dict:
+            position_config: PositionConfig = None,
+            use_market_timing: bool = True,
+            market_timing_index: str = '000300.SH') -> dict:
         """
         运行多指数回测
         
@@ -78,6 +80,8 @@ class MultiIndexBacktester:
             signal_columns: 各指数的信号列名（默认为['final_signal'] * n）
             use_ml_signals: 是否使用 ml_probability 作为仓位依据
             position_config: 仓位配置
+            use_market_timing: 是否启用市场择时（沪深300>MA200才开仓）
+            market_timing_index: 用于市场择时的指数代码（默认沪深300）
         
         Returns:
             dict: 组合回测结果
@@ -135,11 +139,31 @@ class MultiIndexBacktester:
         for day_idx in range(n_days):
             current_date = dates[day_idx]
             
+            # 市场择时检查（使用沪深300的MA200）
+            market_timing_ok = True
+            if use_market_timing and market_timing_index in code_list:
+                market_idx = code_list.index(market_timing_index)
+                market_df = df_list[market_idx]
+                if day_idx < len(market_df) and day_idx >= 200:
+                    # 检查当日收盘价是否高于MA200
+                    current_close = market_df.iloc[day_idx]['close']
+                    ma200 = market_df.iloc[day_idx].get('ma200', 0)
+                    if ma200 > 0 and current_close < ma200:
+                        market_timing_ok = False
+                        print(f"  市场择时: {current_date} 沪深300 < MA200，暂停开仓")
+            
             # 收集当日信号（使用当天早盘的信号）
             current_signals = {}
             for i, (code, signals) in enumerate(zip(code_list, index_signals_list)):
                 if day_idx < len(signals):
-                    current_signals[code] = signals[day_idx]
+                    signal_data = signals[day_idx].copy()
+                    # 如果市场择时不满足，强制调低信号强度
+                    if not market_timing_ok:
+                        signal_data['predicted_return'] = 0.0
+                        if signal_data['signal'] == 'BUY':
+                            signal_data['signal'] = 'HOLD'
+                            signal_data['confidence'] = 0.0
+                    current_signals[code] = signal_data
             
             # 仓位管理
             new_positions = self.position_manager.calculate_positions(
