@@ -29,14 +29,15 @@ class MultiIndexBacktester:
         # 初始化
         mib = MultiIndexBacktester(
             initial_capital=100000,
-            commission_rate=0.00006
+            commission_rate=0.00006,
+            advanced_config=AdvancedPositionConfig()
         )
         
         # 运行回测
         result = mib.run(
             df_list=[df1, df2, df3],
             signal_columns=['final_signal', 'final_signal', 'final_signal'],
-            position_config=PositionConfig()
+            position_config=AdvancedPositionConfig()
         )
         
         # 查看结果
@@ -174,11 +175,21 @@ class MultiIndexBacktester:
                             signal_data['confidence'] *= market_timing_value
                     current_signals[code] = signal_data
             
-            # 仓位管理
-            new_positions = self.position_manager.calculate_positions(
-                current_signals,
-                cash_available=1.0
-            )
+            # 仓位管理（支持 PositionManager 和 AdvancedPositionManager）
+            if hasattr(self.position_manager, 'calculate_positions_v6'):
+                # 使用 AdvancedPositionManager 的新方法
+                new_positions = self.position_manager.calculate_positions_v6(
+                    current_signals,
+                    cash_available=1.0,
+                    portfolio_value=total_value,
+                    current_prices=current_prices
+                )
+            else:
+                # 使用传统 PositionManager 方法
+                new_positions = self.position_manager.calculate_positions(
+                    current_signals,
+                    cash_available=1.0
+                )
             
             # 调仓
             if day_idx > 0:  # 第一天不调仓（初始状态）
