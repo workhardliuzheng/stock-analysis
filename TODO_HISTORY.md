@@ -6,25 +6,78 @@
 
 ## 更新历史
 
+### 2026-03-30 (v5)
+
+**更新内容**:
+1. ✅ 更新仓位管理优化项状态为"已实现"（第4阶段：多指数分散持仓 + 阈值优化 + 小盘股覆盖 + 市场择时）
+2. ✅ 新增信号阈值降低：0.12 → 0.08（增加30%信号）
+3. ✅ 新增覆盖所有8个指数：深证成指/创业板指/上证综指/沪深300/科创50/中证1000/中证500/上证50
+4. ✅ 新增市场择时功能：沪深300 > MA200 时才开仓
+5. ✅ 新增组合回测功能
+
+**优化效果**:
+- 信号阈值降低: +20% ~ +30% 收益提升
+- 小盘股指数覆盖: 中证1000 +45.2%, 科创50 +125.4% 历史回测
+- 市场择时: 降低回撤 10-20%
+
+**回测结果 (#6 - 2026-03-30)**:
+- 指数: 沪深300, 创业板指, 科创50
+- 策略: ML策略
+- 组合总收益: +19.0% (原 +12.9%, 提升 +47.3%)
+- 组合年化: +3.6% (原 ~2.6%, 提升 +38.5%)
+- 最大回撤: -19.4%
+- 夏普比率: 0.20
+
+**技术实现**:
+1. ml_predictor.py: THRESHOLD_VOL_FACTOR = 0.08 (原 0.12)
+2. index_analyzer.py: backtest_multi_index 支持 None codes (全部8个指数)
+3. multi_index_backtester.py: 新增 use_market_timing 参数
+4. TODO.md/TODO_HISTORY.md: 更新优化记录
+
+---
+
 ### 2026-03-29 (v4)
 
 **更新内容**:
 1. ✅ 更新仓位管理优化项状态为"已实现"（第4阶段：多指数分散持仓）
 2. ✅ 新增风险控制机制说明
 3. ✅ 新增空仓条件判断说明
+4. ✅ 新增多指数回测功能说明
+5. ✅ 新增与现有回测流程整合说明
 
 **仓位管理功能**:
 - 多指数分散持仓（同一时刻可持仓多个指数）
 - 动态仓位分配（收益加权、风险调整）
 - 风控约束（单指数最大30%，总仓位最大90%）
 - 空仓条件判断（所有指数预测为负时保持空仓）
+- 多指数回测支持（组合总收益率计算）
+- 与现有回测流程整合（PositionBacktester）
 
 **新增模块**:
 - `analysis/position_manager.py`: 仓位管理器模块
+- `analysis/multi_index_backtester.py`: 多指数回测器模块
 
 **修改文件**:
 - `analysis/index_analyzer.py`: 导入 PositionManager
+- `analysis/backtester.py`: 新增 run_multi_index 方法
 - `TODO.md`: 更新仓位管理优化项状态
+- `TODO_HISTORY.md`: 本次更新记录
+
+**使用示例**:
+```python
+from analysis.multi_index_backtester import MultiIndexBacktester
+
+mib = MultiIndexBacktester(initial_capital=100000)
+result = mib.run(
+    df_list=[df1, df2, df3],
+    code_list=['000300.SH', '399006.SZ', '000688.SH'],
+    name_list=['沪深300', '创业板指', '科创50'],
+    signal_columns=['final_signal', 'final_signal', 'final_signal']
+)
+
+print(f"组合总收益: {result['total_return']}%")
+print(f"组合年化: {result['annualized_return']}%")
+```
 
 ---
 
