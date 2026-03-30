@@ -106,7 +106,8 @@ class IndexAnalyzer:
         
         return df
     
-    def analyze(self, include_ml: bool = True) -> pd.DataFrame:
+    def analyze(self, include_ml: bool = True, auto_tune: bool = False,
+                feature_selection: bool = False, max_features: int = 20) -> pd.DataFrame:
         """
         执行完整分析流程
         
@@ -114,6 +115,9 @@ class IndexAnalyzer:
         
         Args:
             include_ml: 是否包含 ML 预测 (需要 xgboost/sklearn)
+            auto_tune: 是否使用 Optuna 自动调优 ML 超参数
+            feature_selection: 是否进行特征重要性筛选
+            max_features: 保留的最大特征数量
         
         Returns:
             pd.DataFrame: 包含分析结果的DataFrame
@@ -137,21 +141,24 @@ class IndexAnalyzer:
         # ML 预测（使用滚动预测避免数据泄露）
         if include_ml:
             try:
-                predictor = self._get_ml_predictor()
-                print(f"正在滚动预测 {self.name}（避免数据泄露）...")
-                self.data, metrics = predictor.train_and_predict(self.data)
+                predictor = self._get_ml_predictor(feature_selection=feature_selection, max_features=max_features)
+                print(f"正在滚动预测 {self.name}（回归模式，避免数据泄露）...")
+                self.data, metrics = predictor.train_and_predict(self.data, auto_tune=auto_tune)
                 print(f"  ML验证指标: {metrics}")
             except ImportError as e:
                 print(f"  ML模块不可用({e})，跳过ML预测")
+                self.data['ml_predicted_return'] = 0.0
                 self.data['ml_probability'] = 0.5
                 self.data['ml_probability_raw'] = 0.5
                 self.data['ml_signal'] = 'HOLD'
             except Exception as e:
                 print(f"  ML预测失败: {e}，使用默认值")
+                self.data['ml_predicted_return'] = 0.0
                 self.data['ml_probability'] = 0.5
                 self.data['ml_probability_raw'] = 0.5
                 self.data['ml_signal'] = 'HOLD'
         else:
+            self.data['ml_predicted_return'] = 0.0
             self.data['ml_probability'] = 0.5
             self.data['ml_probability_raw'] = 0.5
             self.data['ml_signal'] = 'HOLD'
@@ -162,11 +169,14 @@ class IndexAnalyzer:
         
         return self.data
     
-    def _get_ml_predictor(self):
+    def _get_ml_predictor(self, feature_selection: bool = False, max_features: int = 20):
         """延迟加载 ML 预测器"""
         if self._ml_predictor is None:
             from analysis.ml_predictor import MLPredictor
-            self._ml_predictor = MLPredictor()
+            self._ml_predictor = MLPredictor(
+                feature_selection=feature_selection,
+                max_features=max_features
+            )
         return self._ml_predictor
     
     def get_current_status(self) -> Dict:
@@ -384,6 +394,7 @@ class IndexAnalyzer:
             'factor_score': latest.get('factor_score', 50),
             'factor_signal': latest.get('factor_signal', 'HOLD'),
             'trend_state': latest.get('trend_state', 'sideways'),
+            'ml_predicted_return': latest.get('ml_predicted_return', 0.0),
             'ml_probability': latest.get('ml_probability', 0.5),
             'ml_signal': latest.get('ml_signal', 'HOLD'),
         }
@@ -417,7 +428,12 @@ class IndexAnalyzer:
               f"置信度: {sig.get('final_confidence', 0):.1%}")
         print(f"  趋势状态: {sig.get('trend_state', 'N/A')}")
         print(f"\n  多因子评分: {sig.get('factor_score', 0):.1f}/100 → {sig.get('factor_signal', 'N/A')}")
-        print(f"  ML上涨概率: {sig.get('ml_probability', 0):.1%} → {sig.get('ml_signal', 'N/A')}")
+        ml_ret = sig.get('ml_predicted_return', 0)
+        if ml_ret is not None and not (isinstance(ml_ret, float) and np.isnan(ml_ret)):
+            ml_ret_display = f"{ml_ret:+.3f}%"
+        else:
+            ml_ret_display = "N/A"
+        print(f"  ML预测收益: {ml_ret_display}  伪概率: {sig.get('ml_probability', 0):.1%} → {sig.get('ml_signal', 'N/A')}")
         
         detail = sig.get('factor_detail', {})
         if detail:
@@ -510,13 +526,19 @@ def analyze_all_indices(save_charts: bool = True, print_status: bool = True,
             traceback.print_exc()
 
 
-def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True):
+def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
+                       auto_tune: bool = False, feature_selection: bool = False,
+                       max_features: int = 20, **kwargs):
     """
     生成指数交易信号
     
     Args:
         ts_code: 指定指数代码，None 表示全部
         include_ml: 是否包含 ML 预测
+        auto_tune: 是否使用 Optuna 自动调优
+        feature_selection: 是否进行特征重要性筛选
+        max_features: 保留的最大特征数量
+        **kwargs: 兼容 main.py 传入的其他参数 (model_type 等)
     """
     if ts_code:
         codes = [ts_code]
@@ -526,7 +548,12 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True):
     for code in codes:
         try:
             analyzer = IndexAnalyzer(code)
-            analyzer.analyze(include_ml=include_ml)
+            analyzer.analyze(
+                include_ml=include_ml, 
+                auto_tune=auto_tune,
+                feature_selection=feature_selection,
+                max_features=max_features
+            )
             analyzer.print_current_signal()
         except Exception as e:
             print(f"生成 {code} 信号时出错: {e}")
@@ -535,7 +562,11 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True):
 
 
 def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
-                         include_ml: bool = True):
+                         include_ml: bool = True, auto_tune: bool = False,
+                         commission_rate: float = 0.00006,
+                         execution_timing: str = 'close',
+                         feature_selection: bool = False,
+                         max_features: int = 20, **kwargs):
     """
     回测指数策略
     
@@ -543,6 +574,12 @@ def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
         ts_code: 指定指数代码，None 表示全部
         strategy: 策略类型 factor/ml/combined/all
         include_ml: 是否包含 ML 预测
+        auto_tune: 是否使用 Optuna 自动调优
+        commission_rate: 单边佣金率
+        execution_timing: 执行时机 open/close
+        feature_selection: 是否进行特征重要性筛选
+        max_features: 保留的最大特征数量
+        **kwargs: 兼容 main.py 传入的其他参数 (model_type 等)
     """
     if ts_code:
         codes = [ts_code]
@@ -557,8 +594,41 @@ def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
             print(f"{'#' * 60}")
             
             analyzer = IndexAnalyzer(code)
-            analyzer.analyze(include_ml=include_ml)
-            analyzer.backtest(strategy=strategy)
+            analyzer.analyze(
+                include_ml=include_ml, 
+                auto_tune=auto_tune,
+                feature_selection=feature_selection,
+                max_features=max_features
+            )
+            
+            # 使用自定义回测参数
+            bt = Backtester(
+                commission_rate=commission_rate,
+                execution_timing=execution_timing
+            )
+            
+            if strategy == 'all':
+                strategies = {}
+                if 'factor_signal' in analyzer.data.columns:
+                    strategies['多因子策略'] = 'factor_signal'
+                if 'ml_signal' in analyzer.data.columns:
+                    strategies['ML策略'] = 'ml_signal'
+                if 'final_signal' in analyzer.data.columns:
+                    strategies['混合策略'] = 'final_signal'
+                results = bt.compare_strategies(analyzer.data, strategies)
+                bt.print_comparison(results, index_name=f"{name} ({code})")
+            else:
+                col_map = {
+                    'factor': 'factor_signal',
+                    'ml': 'ml_signal',
+                    'combined': 'final_signal',
+                }
+                col = col_map.get(strategy, 'final_signal')
+                if col in analyzer.data.columns:
+                    result = bt.run(analyzer.data, col)
+                    bt.print_report(result, index_name=f"{name} ({code})")
+                else:
+                    print(f"信号列 {col} 不存在")
         except Exception as e:
             print(f"回测 {code} 时出错: {e}")
             import traceback

@@ -94,8 +94,9 @@ def print_guide():
   - xgboost          : 仅使用 XGBoost
   - lightgbm         : 仅使用 LightGBM（更快）
 
-  ML模型预测的是次日涨跌方向（不预测具体买入时间点）。
-  信号阈值: 上涨概率 > 65% → BUY, < 35% → SELL, 中间 → HOLD
+  ML模型预测的是次日收益率大小（回归模型），并转换为交易信号。
+  信号阈值: 预测收益 > 0.1% → BUY, < -0.1% → SELL, 中间 → HOLD
+  可选 --auto-tune 启用 Optuna 超参数自动调优（耗时较长）
 
 六、注意事项
 ------------
@@ -124,12 +125,14 @@ if __name__ == "__main__":
   python main.py signal --ts-code 000300.SH        生成沪深300今日信号
   python main.py signal --no-ml                    不使用ML预测
   python main.py signal --model-type ensemble      使用集成模型
+  python main.py signal --auto-tune                启用Optuna超参数调优
   python main.py backtest                          回测所有指数所有策略
   python main.py backtest --ts-code 000300.SH      回测沪深300
   python main.py backtest --strategy factor        仅回测多因子策略
   python main.py backtest --strategy ml            仅回测ML策略
   python main.py backtest --execution-timing open  T+1开盘价执行(更真实)
   python main.py backtest --commission 0.000085    自定义佣金率
+  python main.py backtest --auto-tune              启用Optuna超参数调优
   python main.py guide                            显示每日操作指南
         """
     )
@@ -152,6 +155,10 @@ if __name__ == "__main__":
                         help='回测执行时机: open(T+1开盘价)/close(T+1收盘价) (默认: close)')
     parser.add_argument('--commission', type=float, default=0.00006,
                         help='单边佣金率 (默认: 0.00006 即万0.6)')
+    parser.add_argument('--auto-tune', action='store_true',
+                        help='启用 Optuna 超参数自动调优 (signal/backtest模式，耗时较长)')
+    parser.add_argument('--feature-selection', action='store_true',
+                        help='启用特征重要性筛选 (signal/backtest模式)')
     args = parser.parse_args()
     
     if args.mode == 'guide':
@@ -176,7 +183,9 @@ if __name__ == "__main__":
         signal_all_indices(
             ts_code=args.ts_code,
             include_ml=not args.no_ml,
-            model_type=args.model_type
+            auto_tune=args.auto_tune,
+            model_type=args.model_type,
+            feature_selection=args.feature_selection
         )
     
     elif args.mode == 'backtest':
@@ -185,7 +194,9 @@ if __name__ == "__main__":
             ts_code=args.ts_code,
             strategy=args.strategy,
             include_ml=not args.no_ml,
+            auto_tune=args.auto_tune,
             model_type=args.model_type,
             commission_rate=args.commission,
-            execution_timing=args.execution_timing
+            execution_timing=args.execution_timing,
+            feature_selection=args.feature_selection
         )
