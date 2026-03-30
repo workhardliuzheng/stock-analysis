@@ -88,7 +88,7 @@ class AdvancedPositionManager:
         self.portfolio_max_value = 0.0
         
     def calculate_positions(self, 
-                          signals: Dict[str, dict],
+                          index_signals: Dict[str, dict],
                           cash_available: float = 1.0,
                           current_prices: Dict[str, float] = None,
                           portfolio_value: float = 100000.0) -> Dict[str, float]:
@@ -96,7 +96,7 @@ class AdvancedPositionManager:
         计算仓位分配
         
         Args:
-            signals: 各指数的信号字典
+            index_signals: 各指数的信号字典 (兼容 PositionManager)
             cash_available: 可用资金比例
             current_prices: 当前价格
             portfolio_value: 组合当前价值
@@ -108,13 +108,13 @@ class AdvancedPositionManager:
             current_prices = {}
             
         # 1. 检查止损条件
-        if self._check_stop_loss(signals, portfolio_value):
+        if self._check_stop_loss(index_signals, portfolio_value):
             print(f"  [止损触发] 组合回撤超过 {self.config.stop_loss_portfolio*100:.1f}%，全部清仓")
-            return {code: 0.0 for code in signals}
+            return {code: 0.0 for code in index_signals}
         
         # 2. 计算基础仓位
         target_positions = {}
-        for code, signal in signals.items():
+        for code, signal in index_signals.items():
             # 检查单指数止损
             if self._check_single_stop_loss(code, signal, current_prices.get(code, 0)):
                 target_positions[code] = 0.0
@@ -126,7 +126,7 @@ class AdvancedPositionManager:
             
         # 3. 调整总仓位（市场择时）
         total_position = sum(target_positions.values())
-        market_factor = self._get_market_factor(signals)
+        market_factor = self._get_market_factor(index_signals)
         adjusted_total = total_position * market_factor
         
         # 按比例缩放
@@ -268,3 +268,27 @@ class AdvancedPositionManager:
     def get_recommended_threshold(self, code: str) -> float:
         """获取指数建议阈值"""
         return self.config.index_thresholds.get(code, self.config.default_threshold)
+    
+    def calculate_positions_v6(self,
+                             signals: Dict[str, dict],
+                             cash_available: float = 1.0,
+                             portfolio_value: float = 100000.0,
+                             current_prices: Dict[str, float] = None) -> Dict[str, float]:
+        """
+        V6版本仓位计算（支持止损和动态调仓）
+        
+        Args:
+            signals: 各指数的信号字典
+            cash_available: 可用资金比例
+            portfolio_value: 组合当前价值
+            current_prices: 当前价格
+            
+        Returns:
+            Dict[str, float]: 各指数的目标仓位比例
+        """
+        return self.calculate_positions(
+            index_signals=signals,  # 修正参数名
+            cash_available=cash_available,
+            current_prices=current_prices,
+            portfolio_value=portfolio_value
+        )
