@@ -163,9 +163,12 @@ class MultiIndexBacktester:
             
             # 收集当日信号（使用当天早盘的信号）
             current_signals = {}
+            # 收集当前价格（用于高级仓位管理器）
+            current_prices = {}
             for i, (code, signals) in enumerate(zip(code_list, index_signals_list)):
                 if day_idx < len(signals):
                     signal_data = signals[day_idx].copy()
+                    current_prices[code] = df_list[i].iloc[day_idx]['close']  # 收集当前价格
                     # 添加市场择时信号
                     signal_data['market_timing'] = market_timing_value
                     # 如果市场择时不满足，强制调低信号强度
