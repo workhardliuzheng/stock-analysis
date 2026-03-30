@@ -174,15 +174,19 @@ class PositionManager:
         positions = {}
         total_position = 0.0
         
+        # 获取上限参数（兼容 PositionConfig 和 AdvancedPositionConfig）
+        max_pos_per_index = getattr(self.config, 'max_position_per_index', 0.30)
+        max_total_pos = getattr(self.config, 'max_total_position', 0.90)
+        
         for code, raw_pos in raw_positions.items():
             # 单指数上限
-            limited_pos = min(raw_pos, self.config.max_position_per_index)
+            limited_pos = min(raw_pos, max_pos_per_index)
             positions[code] = limited_pos
             total_position += limited_pos
         
         # 总仓位上限
-        if total_position > self.config.max_total_position:
-            scale_factor = self.config.max_total_position / total_position
+        if total_position > max_total_pos:
+            scale_factor = max_total_pos / total_position
             positions = {code: pos * scale_factor for code, pos in positions.items()}
         
         # 清理小仓位
