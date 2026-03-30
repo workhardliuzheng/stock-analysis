@@ -11,6 +11,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 
 from analysis.position_manager import PositionManager, PositionConfig
+from analysis.advanced_position_manager import AdvancedPositionManager, AdvancedPositionConfig
 from analysis.backtester import Backtester
 
 
@@ -47,12 +48,14 @@ class MultiIndexBacktester:
                  initial_capital: float = 100000,
                  commission_rate: float = 0.00006,
                  position_manager: PositionManager = None,
+                 advanced_config: AdvancedPositionConfig = None,
                  execution_timing: str = 'open'):
         """
         Args:
             initial_capital: 初始资金
             commission_rate: 单边佣金率
-            position_manager: 仓位管理器
+            position_manager: 仓位管理器 (PositionManager or AdvancedPositionManager)
+            advanced_config: 高级仓位配置 (AdvancedPositionConfig)
             execution_timing: 执行时机 'open'/'close'
         """
         self.initial_capital = initial_capital
@@ -79,7 +82,7 @@ class MultiIndexBacktester:
             name_list: 各指数名称列表
             signal_columns: 各指数的信号列名（默认为['final_signal'] * n）
             use_ml_signals: 是否使用 ml_probability 作为仓位依据
-            position_config: 仓位配置
+            position_config: 仓位配置 (PositionConfig or AdvancedPositionConfig)
             use_market_timing: 是否启用市场择时（沪深300>MA200才开仓）
             market_timing_index: 用于市场择时的指数代码（默认沪深300）
         
@@ -92,7 +95,10 @@ class MultiIndexBacktester:
         if signal_columns is None:
             signal_columns = ['final_signal'] * len(df_list)
         
-        if position_config:
+        # 根据配置类型选择仓位管理器
+        if isinstance(position_config, AdvancedPositionConfig):
+            self.position_manager = AdvancedPositionManager(position_config)
+        elif position_config:
             self.position_manager.config = position_config
         
         # 初始化
@@ -141,6 +147,7 @@ class MultiIndexBacktester:
             
             # 市场择时检查（使用沪深300的MA200）
             market_timing_ok = True
+            market_timing_value = 1.0  # 默认正常市场
             if use_market_timing and market_timing_index in code_list:
                 market_idx = code_list.index(market_timing_index)
                 market_df = df_list[market_idx]
@@ -150,19 +157,21 @@ class MultiIndexBacktester:
                     ma200 = market_df.iloc[day_idx].get('ma200', 0)
                     if ma200 > 0 and current_close < ma200:
                         market_timing_ok = False
-                        print(f"  市场择时: {current_date} 沪深300 < MA200，暂停开仓")
+                        market_timing_value = 0.7  # 保守市场
+                        print(f"  市场择时: {current_date} 沪深300 < MA200，降低仓位至70%")
             
             # 收集当日信号（使用当天早盘的信号）
             current_signals = {}
             for i, (code, signals) in enumerate(zip(code_list, index_signals_list)):
                 if day_idx < len(signals):
                     signal_data = signals[day_idx].copy()
+                    # 添加市场择时信号
+                    signal_data['market_timing'] = market_timing_value
                     # 如果市场择时不满足，强制调低信号强度
                     if not market_timing_ok:
-                        signal_data['predicted_return'] = 0.0
+                        signal_data['predicted_return'] *= market_timing_value
                         if signal_data['signal'] == 'BUY':
-                            signal_data['signal'] = 'HOLD'
-                            signal_data['confidence'] = 0.0
+                            signal_data['confidence'] *= market_timing_value
                     current_signals[code] = signal_data
             
             # 仓位管理
