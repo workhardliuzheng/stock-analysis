@@ -18,6 +18,7 @@ import json
 import os
 import pickle
 from typing import Optional, Dict, List
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -944,10 +945,31 @@ class MLPredictor:
         with open(filepath, 'wb') as f:
             pickle.dump(data, f)
 
-    def load_model(self, filepath: str):
+    def load_model(self, filepath: str, use_cache: bool = False, index_code: str = None, date: str = None):
         """加载模型和特征列名"""
-        with open(filepath, 'rb') as f:
-            data = pickle.load(f)
+        # 模型缓存支持
+        if use_cache and index_code and date:
+            try:
+                from analysis.model_cache import ModelCache
+                cache = ModelCache()
+                cached_data = cache.load_model(index_code, date)
+                if cached_data:
+                    data = cached_data
+                else:
+                    with open(filepath, 'rb') as f:
+                        data = pickle.load(f)
+                    # 保存到缓存
+                    cache.save_model(index_code, date, data['model'], {
+                        'feature_columns': data['feature_columns'],
+                        'model_params': data['model_params']
+                    })
+            except Exception as e:
+                print(f"  [缓存失败] {e} - 使用普通加载方式")
+                with open(filepath, 'rb') as f:
+                    data = pickle.load(f)
+        else:
+            with open(filepath, 'rb') as f:
+                data = pickle.load(f)
         self.model = data['model']
         self.feature_columns = data['feature_columns']
         self.model_params = data.get('model_params', self.DEFAULT_PARAMS)
@@ -993,6 +1015,43 @@ class MLPredictor:
         if isinstance(result, pd.Series):
             result = result.replace([np.inf, -np.inf], np.nan)
         return result
+
+    # ==================== 模型持久化 ====================
+
+    def save_model(self, filepath: str, use_cache: bool = False, index_code: str = None, date: str = None):
+        """
+        保存模型到文件（可选：保存到缓存）
+        
+        Args:
+            filepath: 文件路径
+            use_cache: 是否使用模型缓存
+            index_code: 指数代码（用于缓存）
+            date: 日期（用于缓存）
+        """
+        data = {
+            'model': self.model,
+            'feature_columns': self.feature_columns,
+            'model_params': self.model_params,
+            'return_std': self._return_std,
+            'save_time': datetime.now().isoformat()
+        }
+        
+        # 保存到文件
+        with open(filepath, 'wb') as f:
+            pickle.dump(data, f)
+        
+        # 保存到缓存
+        if use_cache and index_code and date:
+            try:
+                from analysis.model_cache import ModelCache
+                cache = ModelCache()
+                cache.save_model(index_code, date, self.model, {
+                    'feature_columns': self.feature_columns,
+                    'model_params': self.model_params
+                })
+                print(f"  [模型缓存] {index_code} {date} -> {filepath}")
+            except Exception as e:
+                print(f"  [缓存失败] {e}")
 
     @staticmethod
     def _extract_json_field(json_str, field: str) -> Optional[float]:
