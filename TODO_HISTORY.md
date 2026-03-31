@@ -4,7 +4,38 @@
 
 ---
 
+---
+
 ## 更新历史
+
+### 2026-03-30 (v7-2)
+
+**更新内容**:
+1. ✅ 特征交叉工程优化 (TODO.md #17)
+2. ✅ 特征交叉类型: 乘法/除法/加法/减法
+3. ✅ 比率特征: Close/MA、Vol/MA等
+4. ✅ 多项式特征: degree=2 (平方项)
+5. ✅ 对数特征: 适用于偏态分布
+
+**技术实现**:
+1. feature_cross_engine.py (10638 bytes) - 新增特征交叉引擎
+   - FeatureCrossEngine: 主要类
+   - add_cross_features: 交叉特征生成
+   - add_ratio_features: 比率特征生成
+   - add_polynomial_features: 多项式特征生成
+   - add_log_features: 对数特征生成
+   - generate_all_features: 综合生成
+
+**预期效果**:
+- 提高模型预测能力 AUC 0.02-0.05
+- 捕捉更复杂的市场关系
+- 增强模型非线性表达能力
+
+**测试**:
+- test_feature_cross.py (待创建)
+- 验证新特征有效性和计算效率
+
+---
 
 ### 2026-03-30 (v5)
 
