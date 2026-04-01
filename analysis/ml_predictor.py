@@ -54,6 +54,17 @@ try:
 except ImportError:
     HAS_OPTUNA = False
 
+try:
+    from .feature_cross_engine import FeatureCrossEngine
+    HAS_CROSS_ENGINE = True
+except ImportError:
+    HAS_CROSS_ENGINE = False
+    class FeatureCrossEngine:
+        def __init__(self):
+            pass
+        def generate_all_features(self, df, feature_columns):
+            return df, feature_columns
+
 
 class MLPredictor:
     """
@@ -124,6 +135,7 @@ class MLPredictor:
         self._adaptive_buy_threshold = self.BUY_THRESHOLD
         self._adaptive_sell_threshold = self.SELL_THRESHOLD
         self._flip_signals = False  # 反转模式: IC 持续为负时启用
+        self._feature_cross_engine = FeatureCrossEngine()  # 特征交叉引擎
 
     # ==================== 自适应阈值 ====================
 
@@ -235,8 +247,18 @@ class MLPredictor:
             result[f'feat_dev_ma{period}'] = result['deviation_rate'].apply(
                 lambda x: self._extract_json_field(x, f'ma_{period}'))
 
-        # 收集特征列名
-        self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
+        # 收集初始特征列名
+        initial_features = [c for c in result.columns if c.startswith('feat_') and c not in ['feat_pct_chg']]
+
+        # --- 特征交叉工程 (V7-2优化) ---
+        if HAS_CROSS_ENGINE and self._feature_cross_engine is not None:
+            # 生成交叉特征
+            result, new_features = self._feature_cross_engine.generate_all_features(result)
+            # 更新特征列列表
+            self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
+        else:
+            # 没有特征交叉引擎，直接收集所有特征
+            self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
 
         return result
 
