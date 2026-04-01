@@ -37,6 +37,24 @@ stock-analysis/
 ├── config.yaml                    # 数据库连接 + Tushare token
 ├── requirements.txt               # 依赖清单
 ├── AGENTS.md                      # 本文件
+├── BACKTEST_LOG.md               # 回测效果记录
+├── TODO.md                       # 待优化项清单
+│
+├── tests/                         # 测试脚本集合
+│   ├── __init__.py               # 包初始化
+│   ├── README.md                 # 测试说明文档
+│   ├── backtest/                 # 回测测试
+│   │   ├── test_all_indices_backtest.py
+│   │   ├── test_multi_index_backtest.py
+│   │   ├── test_v6_backtest.py
+│   │   └── test_v6_backtest_8indices.py
+│   ├── position/                 # 仓位管理测试
+│   │   ├── test_v7_position_simple.py
+│   │   ├── test_v7_position_detailed.py
+│   │   └── demo_position_manager.py
+│   └── feature/                  # 特征工程测试
+│       ├── test_feature_cross.py
+│       └── test_model_cache.py
 │
 ├── entity/                        # 数据实体层
 │   ├── constant.py                # 指数代码/名称映射、路径常量
