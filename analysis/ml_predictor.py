@@ -136,30 +136,106 @@ class MLPredictor:
         self._adaptive_sell_threshold = self.SELL_THRESHOLD
         self._flip_signals = False  # 反转模式: IC 持续为负时启用
         self._feature_cross_engine = FeatureCrossEngine()  # 特征交叉引擎
+        self._historical_signals = pd.Series(dtype='object')  # 历史信号，用于计算交易频率
 
     # ==================== 自适应阈值 ====================
 
-    def _calculate_adaptive_thresholds(self, returns: pd.Series) -> tuple:
+    def _calculate_adaptive_thresholds(self, returns: pd.Series, 
+                                       market_volatility: Optional[float] = None,
+                                       recent_trade_frequency: Optional[float] = None) -> tuple:
         """
-        基于历史收益率波动率计算自适应信号阈值
+        基于多维度计算自适应信号阈值
 
-        不同指数波动率差异较大 (上证50 ~0.7%, 中证500 ~1.0%),
-        使用固定阈值会导致低波动指数过度交易、高波动指数信号不足。
+        优化点:
+        1. 指数波动率: 高波动指数需要更高阈值，避免过度交易
+        2. 市场波动率: 市场整体高波动时，提高阈值减少噪音交易
+        3. 交易频率: 近期交易频繁时，提高阈值降低频率
 
-        公式: threshold = max(0.05, volatility * THRESHOLD_VOL_FACTOR)
+        公式: 
+            base_threshold = volatility * THRESHOLD_VOL_FACTOR
+            market_adjustment = 1 + (market_vol - avg_market_vol) * 0.5
+            frequency_adjustment = 1 + (recent_freq - target_freq) * 0.3
+            final_threshold = base_threshold * market_adjustment * frequency_adjustment
+            final_threshold = clamp(final_threshold, min=0.03, max=0.15)
 
         Args:
             returns: 历史收益率序列 (pct_chg)
+            market_volatility: 市场波动率（如沪深300的波动率）
+            recent_trade_frequency: 近期交易频率（0-1之间）
 
         Returns:
             tuple: (buy_threshold, sell_threshold)
         """
+        # 1. 基础阈值 - 基于指数波动率
         vol = returns.dropna().std()
         if np.isnan(vol) or vol < 0.1:
             vol = 1.0  # 默认波动率 1%
+        
+        base_threshold = vol * self.THRESHOLD_VOL_FACTOR
+        
+        # 2. 市场波动率调整
+        market_adjustment = 1.0
+        if market_volatility is not None and not np.isnan(market_volatility):
+            # 市场波动率基准设为1.0%，高于基准时提高阈值
+            avg_market_vol = 1.0  # 市场平均波动率
+            market_adjustment = 1.0 + (market_volatility - avg_market_vol) * 0.5
+            market_adjustment = np.clip(market_adjustment, 0.8, 1.5)  # 限制在0.8-1.5倍
+        
+        # 3. 交易频率调整
+        frequency_adjustment = 1.0
+        if recent_trade_frequency is not None and not np.isnan(recent_trade_frequency):
+            # 目标交易频率约为20%（每5天交易一次）
+            target_frequency = 0.2
+            frequency_adjustment = 1.0 + (recent_trade_frequency - target_frequency) * 0.3
+            frequency_adjustment = np.clip(frequency_adjustment, 0.7, 1.3)  # 限制在0.7-1.3倍
+        
+        # 4. 计算最终阈值
+        final_threshold = base_threshold * market_adjustment * frequency_adjustment
+        
+        # 5. 限制阈值范围
+        # 最低0.03%（小盘股激进阈值），最高0.15%（大盘股保守阈值）
+        final_threshold = np.clip(final_threshold, 0.03, 0.15)
+        
+        return final_threshold, -final_threshold
 
-        adaptive_thresh = max(0.05, vol * self.THRESHOLD_VOL_FACTOR)
-        return adaptive_thresh, -adaptive_thresh
+    def _calculate_market_volatility(self, df: pd.DataFrame) -> float:
+        """
+        计算市场波动率（基于沪深300或综合指数）
+        
+        Args:
+            df: 包含市场数据的DataFrame
+            
+        Returns:
+            float: 市场波动率
+        """
+        if 'pct_chg' in df.columns and len(df) > 20:
+            # 使用最近20天的市场波动率
+            recent_returns = df['pct_chg'].tail(20)
+            market_vol = recent_returns.std()
+            if not np.isnan(market_vol):
+                return market_vol
+        return 1.0  # 默认市场波动率
+
+    def _calculate_trade_frequency(self, signals: pd.Series, window: int = 20) -> float:
+        """
+        计算近期交易频率
+        
+        Args:
+            signals: 信号序列（BUY/SELL/HOLD）
+            window: 计算窗口（天数）
+            
+        Returns:
+            float: 交易频率（0-1之间）
+        """
+        if len(signals) < window:
+            return 0.2  # 默认频率
+        
+        recent_signals = signals.tail(window)
+        # 统计非HOLD信号的比例
+        trade_count = (recent_signals != 'HOLD').sum()
+        trade_frequency = trade_count / window
+        
+        return trade_frequency
 
     # ==================== 特征工程 ====================
 
@@ -597,13 +673,26 @@ class MLPredictor:
         valid_returns = labels.loc[valid_mask].values
         self._return_std = max(np.nanstd(valid_returns), 0.1)
 
-        # 自适应信号阈值（基于波动率）
+        # 自适应信号阈值（基于波动率、市场波动率、交易频率）
         pct_chg_series = pd.to_numeric(df['pct_chg'], errors='coerce')
-        buy_thresh, sell_thresh = self._calculate_adaptive_thresholds(pct_chg_series)
+        
+        # 计算市场波动率
+        market_vol = self._calculate_market_volatility(df)
+        
+        # 计算近期交易频率（如果有历史信号）
+        recent_freq = None
+        if hasattr(self, '_historical_signals') and len(self._historical_signals) > 0:
+            recent_freq = self._calculate_trade_frequency(self._historical_signals)
+        
+        buy_thresh, sell_thresh = self._calculate_adaptive_thresholds(
+            pct_chg_series, 
+            market_volatility=market_vol,
+            recent_trade_frequency=recent_freq
+        )
         self._adaptive_buy_threshold = buy_thresh
         self._adaptive_sell_threshold = sell_thresh
         print(f"  自适应阈值: BUY>{buy_thresh:.4f}%, SELL<{sell_thresh:.4f}% "
-              f"(波动率={pct_chg_series.dropna().std():.3f}%)")
+              f"(波动率={pct_chg_series.dropna().std():.3f}%, 市场波动={float(market_vol):.3f}%)")
 
         # Optuna 超参数调优
         if auto_tune:
@@ -774,6 +863,9 @@ class MLPredictor:
                 signals.append('HOLD')
         result['ml_signal'] = signals
 
+        # 记录历史信号，用于后续计算交易频率
+        self._historical_signals = pd.Series(signals, index=result.index)
+
         return result, metrics
 
     def train(self, df: pd.DataFrame, auto_tune: bool = False) -> dict:
@@ -931,6 +1023,9 @@ class MLPredictor:
             else:
                 signals.append('HOLD')
         result['ml_signal'] = signals
+
+        # 记录历史信号，用于后续计算交易频率
+        self._historical_signals = pd.Series(signals, index=result.index)
 
         return result
 
