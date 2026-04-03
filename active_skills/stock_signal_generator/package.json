@@ -1,0 +1,40 @@
+{
+  "name": "股票分析系统",
+  "description": "自动化股市分析和信号生成",
+  "version": "1.0.0",
+  "author": "Zeno",
+  "skill_id": "stock_analysis_signal_generator",
+  "commands": {
+    "full": {
+      "description": "完整执行: 同步数据 + 计算信号",
+      "script": "run_signal_generator.py"
+    },
+    "sync": {
+      "description": "仅同步数据",
+      "script": "sync_data.py"
+    },
+    "signals": {
+      "description": "仅计算信号",
+      "script": "calculate_signals.py"
+    }
+  },
+  "requirements": [
+    "tushare",
+    "pandas",
+    "numpy",
+    "xgboost",
+    "scikit-learn",
+    "optuna"
+  ],
+  "config": {
+    "default_indices": [
+      "000688.SH",
+      "399006.SZ",
+      "000001.SH",
+      "000905.SH",
+      "000852.SH"
+    ],
+    "default_start_date": "20230101",
+    "tushare_token_required": true
+  }
+}

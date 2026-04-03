@@ -1,0 +1,11 @@
+{
+  "name": "每日股市信号生成",
+  "description": "每天4:00自动运行股市分析并生成信号",
+  "schedule": "0 4 * * *",
+  "command": "python E:\\pycharm\\stock-analysis\\active_skills\\stock_signal_generator\\run_signal_generator.py --tushare-token YOUR_TOKEN",
+  "agent_id": "default",
+  "enabled": true,
+  "timeout": 600,
+  "retry_count": 3,
+  "retry_delay": 60
+}
