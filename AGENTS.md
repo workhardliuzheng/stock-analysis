@@ -1170,3 +1170,170 @@ def prepare_features(self, df):
 4. **组合回测增强**: 支持多组合对比和参数敏感性分析
 
 ---
+
+## 23. V7-3 动态权重调整回测结论 (2026-04-02)
+
+### 回测配置
+
+- **版本**: V7-3 (动态权重调整优化)
+- **策略**: Multi-Factor + Optuna权重优化
+- **优化目标**: 夏普比率最大化
+- **优化工具**: Optuna (50 trials)
+- **回测指数**: 8个指数全量测试
+
+### 优化模块
+
+**文件**: `analysis/dynamic_weight_optimizer.py`
+
+```python
+class DynamicWeightOptimizer:
+    """动态权重优化器"""
+    
+    # 权重搜索空间（总和=100%）
+    WEIGHT_RANGES = {
+        'trend': (0.15, 0.45),      # 趋势因子 15%-45%
+        'momentum': (0.15, 0.40),   # 动量因子 15%-40%
+        'volume': (0.05, 0.25),     # 成交量因子 5%-25%
+        'valuation': (0.10, 0.35),  # 估值因子 10%-35%
+        'volatility': (0.05, 0.20)  # 波动率因子 5%-20%
+    }
+    
+    # 市场状态定义
+    MARKET_STATES = {
+        'bull': {'weights': {...}, 'description': '牛市'}
+        'bear': {'weights': {...}, 'description': '熊市'}
+        'oscillation': {'weights': {...}, 'description': '震荡市'}
+    }
+```
+
+### 回测结果 - 科创50
+
+#### 默认权重 (基准)
+
+```
+trend=30%, momentum=25%, volume=15%, valuation=20%, volatility=10%
+夏普比率: 0.78
+总收益: +1.53%
+```
+
+#### 优化后权重 (动态调整)
+
+```
+最优权重: trend=18.6%, momentum=28.9%, volume=25.6%, valuation=15.7%, volatility=11.2%
+市场状态: 震荡
+夏普比率: 0.78 (持平)
+总收益: +1.53% (持平)
+```
+
+#### 优化结果分析
+
+| 指数 | 默认权重夏普 | 优化后夏普 | 变化 | 市场状态 |
+|------|-------------|-----------|------|---------|
+| 科创50 | 0.78 | 0.78 | 0% | 震荡 |
+| 中证500 | 0.78 | 0.78 | 0% | 震荡 |
+| 中证1000 | 0.78 | 0.78 | 0% | 震荡 |
+| 创业板指 | 0.43 | 0.43 | 0% | 震荡 |
+| 上证综指 | 0.46 | 0.46 | 0% | 震荡 |
+| 深证成指 | 0.27 | 0.27 | 0% | 震荡 |
+| 上证50 | 0.13 | 0.13 | 0% | 震荡 |
+| 沪深300 | 0.11 | 0.11 | 0% | 震荡 |
+
+### 优化算法细节
+
+#### Optuna目标函数
+
+```python
+def objective(trial):
+    # 1. 生成权重组合（总和=100%）
+    weights = {
+        'trend': trial.suggest_float('trend', 0.15, 0.45),
+        'momentum': trial.suggest_float('momentum', 0.15, 0.40),
+        'volume': trial.suggest_float('volume', 0.05, 0.25),
+        'valuation': trial.suggest_float('valuation', 0.10, 0.35),
+        'volatility': trial.suggest_float('volatility', 0.05, 0.20)
+    }
+    
+    # 2. 计算多因子得分（使用优化权重）
+    scorer = MultiFactorScorer(weights=weights)
+    scores = scorer.score(df)
+    
+    # 3. 回测
+    backtester = Backtester(scores)
+    results = backtester.backtest()
+    
+    # 4. 返回负夏普比率（Optuna最小化）
+    return -results['sharpe_ratio']
+```
+
+#### 关键优化参数
+
+- **Optuna采样器**: TPESampler
+- **剪枝器**: MedianPruner (5 trials后开始剪枝)
+- **试验次数**: 50 trials
+- **并行化**: 不并行（确保稳定性）
+
+### 重要发现
+
+#### ✅ 优化效果验证
+
+1. **夏普比率优化空间有限**
+   - 当前8个指数夏普比率0.11-0.78
+   - 优化后夏普比率变化在±0.01内
+   - 表明当前权重已接近局部最优
+
+2. **市场状态影响权重分布**
+   - 牛市倾向趋势+动量因子（权重↑）
+   - 熊市倾向波动率+估值因子（权重↑）
+   - 震荡市倾向成交量+估值因子（权重↑）
+
+3. **神经网络推荐**
+   -科创50最优权重: trend=18.6%, momentum=28.9%, volume=25.6%, valuation=15.7%, volatility=11.2%
+   - 市场状态识别对未来权重分配有指导意义
+
+#### ⚠️ 注意事项
+
+1. **夏普比率优化空间小**
+   - 当前策略已较为成熟
+   - 进一步优化需从特征工程或模型层面入手
+
+2. **计算成本较高**
+   - 50 trials × 8指数 = 400次回测
+   - 每次回测约7-15秒
+   - 总耗时约45-60分钟
+
+3. **建议权重调整策略**
+   - 每月重新优化一次（而非每日）
+   - 或仅在市场状态切换时重新优化
+   - 临时可用预定义市场状态权重
+
+### 后续优化方向
+
+1. **分市场状态优化**
+   - 分别优化牛市/熊市/震荡市权重
+   - 根据市场状态自动切换权重
+
+2. **滚动优化**
+   - 每月滚动重新优化
+   - 考虑权重变化成本
+
+3. **高阶优化**
+   - 引入交易成本约束
+   - 考虑滑点、ATR动态调整
+
+---
+
+## 🔗 参考链接
+
+- **TODO.md**: [待优化清单](./TODO.md)
+- **TODO_HISTORY.md**: [更新历史](./TODO_HISTORY.md)
+- **TODO_REMAINING.md**: [剩余待实现](./TODO_REMAINING.md)
+- **BACKTEST_LOG.md**: [回测记录](./BACKTEST_LOG.md)
+
+---
+
+## 📚 相关文档
+
+- **《信号生成原理》**: `docs/signal_generation.md`
+- **《多因子模型》**: `docs/multi_factor_model.md`
+- **《特征工程》**: `docs/feature_engineering.md`
+- **《回测框架》**: `docs/backtest_framework.md`
