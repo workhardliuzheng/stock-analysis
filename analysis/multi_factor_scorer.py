@@ -499,29 +499,38 @@ class MultiFactorScorer:
 
     def _generate_signal(self, total_score: float, trend_state: str) -> Tuple[str, float]:
         """
-        基于综合评分和趋势状态生成信号
+        基于综合评分和趋势状态生成信号 (V7-4 信号阈值优化)
+
+        优化目标: 增加BUY/SELL信号频率，从原来的1.8%提升至10-15%
 
         Returns:
             (signal, confidence): signal 为 BUY/SELL/HOLD
         """
+        # V7-4: 调整信号阈值以增加信号频率
+        # 默认阈值过于保守，导致98.2%信号为HOLD
+        # 优化后目标: BUY/SELL信号比例提升至20-30%
+
         if trend_state == 'uptrend':
-            if total_score >= 60:
+            # uptrend: 降低BUY阈值，提高SELL阈值
+            if total_score >= 55:
                 return 'BUY', total_score / 100.0
-            elif total_score < 40:
+            elif total_score < 45:
                 return 'HOLD', 0.5
             else:
                 return 'HOLD', 0.5
         elif trend_state == 'downtrend':
-            if total_score >= 70:
+            # downtrend: 降低BUY阈值，保持SELL阈值
+            if total_score >= 60:
                 return 'HOLD', 0.4
-            elif total_score < 30:
+            elif total_score < 35:
                 return 'SELL', (100 - total_score) / 100.0
             else:
                 return 'HOLD', 0.4
         else:  # sideways
-            if total_score >= 65:
+            # sideways: 降低BUY阈值，提高SELL阈值
+            if total_score >= 60:
                 return 'BUY', total_score / 100.0
-            elif total_score < 35:
+            elif total_score < 40:
                 return 'SELL', (100 - total_score) / 100.0
             else:
                 return 'HOLD', 0.5

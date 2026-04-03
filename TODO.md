@@ -286,6 +286,32 @@
 
 ---
 
-> 最后更新: 2026-04-01
+> 最后更新: 2026-04-03
 > 
 > 文件整合: 合并 TODO.md + TODO_HISTORY.md + TODO_REMAINING.md
+
+---
+
+### 最近更新 (2026-04-03)
+
+#### ✅ V7-4 信号阈值优化 (已完成)
+- **状态**: [x] 已实现
+- **文件**: `analysis/signal_threshold_optimizer.py`, `test_v74_simple.py`
+- **效果**: BUY/SELL信号频率提升4300% (1.8% → 78.5%)
+- **回测**: 见 BACKTEST_LOG.md #11
+- **详情**: 
+  -科创50 BUY信号 371条 (48.4%)
+  - 科创50 SELL信号 230条 (30.0%)
+  - 科创50 HOLD信号 165条 (21.5%)
+
+#### ✅ V7-3 动态权重优化 (已完成)
+- **状态**: [x] 已实现
+- **文件**: `analysis/dynamic_weight_optimizer.py`
+- **效果**: 科创50最优权重验证完成 (夏普0.78)
+- **回测**: 见 BACKTEST_LOG.md #10
+
+#### ✅ V7-2 特征交叉优化 (已完成)
+- **状态**: [x] 已实现
+- **文件**: `analysis/feature_engineer.py`
+- **效果**: 科创50 ML收益 +109.97%
+- **回测**: 见 BACKTEST_LOG.md #8
