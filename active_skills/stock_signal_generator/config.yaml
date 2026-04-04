@@ -1,7 +1,7 @@
 # 股票分析系统配置
 
 tushare:
-  token: YOUR_TUSHARE_TOKEN_HERE  # 请替换为你的Tushare Token
+  token: 49dd4d99eb45ca99bf9c6e13690b6b79daa756974e0fa235b6add6c3
   date_format: "%Y-%m-%d"
 
 indices:

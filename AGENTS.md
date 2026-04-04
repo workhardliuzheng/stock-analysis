@@ -1483,6 +1483,53 @@ V7-4优化: BUY=371 (48.4%), SELL=230 (30.0%), HOLD=165 (21.5%)
 
 ---
 
+## 🚀 Skill模块
+
+### stock_analysis_signal_generator
+
+**位置**: `active_skills/stock_signal_generator/`
+
+**功能**: 股票分析系统信号生成与投资顾问模块
+
+**核心文件**:
+- `run_signal_generator.py` - 主程序 (支持CLI参数: `--data-only`, `--signal-only`, `--indices`, `--start-date`)
+- `sync_data.py` - 数据同步模块 (支持全量数据同步)
+- `calculate_signals.py` - 信号计算模块 (V7-4/V7-5策略)
+- `report_generator.py` - 信号分析报告生成
+- `investment_advisor.py` - 投资顾问模块 (明确买卖决策)
+
+**配置**:
+- `config.yaml` - 配置文件 (含指数权重/融合权重/输出路径)
+- `cron_config.json` - 定时任务配置 (`0 4 * * *` 每日4:00运行)
+
+**输出标准**:
+1. **核心结论**: 平均信号强度 + 建议仓位 + 策略
+2. **指数分析**: 强度/操作/仓位/置信度/原因/风险
+3. **组合建议**: 买入/持有/卖出三份组
+4. **具体建议**: 买入机会/卖出机会/紧急预警
+5. **仓位管理**: 总体建议 + 具体分配
+6. **风险提示**: 风险等级 + 具体建议
+
+**技术亮点**:
+- 信号强度: BUY% - SELL% 直观量化买卖力度
+- 操作建议: HOLD/BUY/SELL 三类明确信号
+- 具体建议: 分批建仓/逢高减仓/大幅减仓/立即减仓
+- 紧急预警: SELL > 60% 标记为紧急
+- 仓位指南: 明确的建议仓位百分比
+- 风险评估: 高/中高/中等/低等级划分
+- GBK兼容: 禁止emoji，使用 [OK]/[WARNING]/[ERROR]
+
+### 定时任务配置
+
+**cron表达式**: `0 4 * * *` (每日4:00运行)
+
+**命令**:
+```bash
+copaw skills run stock_analysis_signal_generator --agent-id <agent-id> --tushare-token <token>
+```
+
+---
+
 ## 📚 相关文档
 
 - **《信号生成原理》**: `docs/signal_generation.md`

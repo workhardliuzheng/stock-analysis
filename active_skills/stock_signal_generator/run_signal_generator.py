@@ -255,17 +255,17 @@ def generate_full_report(indices, start_date, tushare_token):
 def print_report(data_results, signal_results, fusion_results):
     """打印报告"""
     print("\n" + "="*60)
-    print("📈 股市分析系统 - 信号生成报告")
+    print("[OK] 股市分析系统 - 信号生成报告")
     print("="*60)
     
-    print("\n✅ [数据同步]")
+    print("\n[OK] [数据同步]")
     if data_results:
         for code, rows in data_results.items():
             print(f"   - {code}: {rows} 行数据")
     else:
         print("   - 无数据同步结果")
     
-    print("\n✅ [信号计算]")
+    print("\n[OK] [信号计算]")
     if signal_results:
         for code, stats in signal_results.items():
             total = stats['total_rows']
@@ -279,11 +279,11 @@ def print_report(data_results, signal_results, fusion_results):
     else:
         print("   - 无信号计算结果")
     
-    print("\n✅ [融合信号]")
-    if fusion_results:
+    print("\n[OK] [融合信号]")
+    if fusion_results and 'fusion' in fusion_results:
         total_return = 0.0
         count = 0
-        for code, stats in fusion_results.items():
+        for code, stats in fusion_results['fusion'].items():
             print(f"   - {code}:")
             print(f"     BUY: {stats['buy_signals']}, SELL: {stats['sell_signals']}, HOLD: {stats['hold_signals']}")
             print(f"     总收益: {stats['total_return']:.2f}%")
@@ -298,7 +298,7 @@ def print_report(data_results, signal_results, fusion_results):
         print("   - 无融合信号结果")
     
     print("\n" + "="*60)
-    print("✅ 信号生成完成!")
+    print("[OK] 信号生成完成!")
     print("="*60)
 
 def main():
@@ -317,11 +317,11 @@ def main():
     indices = [idx.strip() for idx in args.indices.split(',')]
     
     print("="*60)
-    print("📈 股市分析系统 - 信号生成")
+    print("[OK] 股市分析系统 - 信号生成")
     print("="*60)
-    print(f"⏰ 执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"📊 指数列表: {', '.join(indices)}")
-    print(f"📅 起始日期: {args.start_date}")
+    print(f"[OK] 执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"[OK] 指数列表: {', '.join(indices)}")
+    print(f"[OK] 起始日期: {args.start_date}")
     
     data_results = {}
     signal_results = {}
@@ -349,8 +349,8 @@ def main():
         logger.info("[完成] 信号生成完成")
         
     except Exception as e:
-        logger.error(f"[错误] {str(e)}")
-        print(f"\n❌ 错误: {str(e)}")
+        logger.error(f"[ERROR] {str(e)}")
+        print(f"\n[ERROR] 错误: {str(e)}")
         return 1
     
     return 0

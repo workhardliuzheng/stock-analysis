@@ -17,14 +17,17 @@ def sync_data(indices, start_date, tushare_token):
     """同步指数数据"""
     results = {}
     
+    # 临时更新Tushare token
+    import os
+    os.environ['TUSHARE_TOKEN'] = tushare_token
+    
     for code in indices:
         try:
             print(f"正在同步 {code}...")
             
             analyzer = IndexAnalyzer(
-                index_code=code,
-                start_date=start_date,
-                tushare_token=tushare_token
+                ts_code=code,
+                start_date=start_date
             )
             result = analyzer.analyze(include_ml=False)
             

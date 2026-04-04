@@ -26,10 +26,12 @@ def calculate_signals(indices, start_date, tushare_token):
             print(f"正在计算 {code} 的信号...")
             
             # 1. 加载数据
+            # 临时设置Tushare token
+            os.environ['TUSHARE_TOKEN'] = tushare_token
+            
             analyzer = IndexAnalyzer(
-                index_code=code,
-                start_date=start_date,
-                tushare_token=tushare_token
+                ts_code=code,
+                start_date=start_date
             )
             data = analyzer.analyze(include_ml=True)
             
