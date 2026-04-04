@@ -1,10 +1,11 @@
 # 股市数据同步与信号生成
 
 > **技能ID**: `stock_analysis_signal_generator`  
-> **版本**: v1.0  
+> **版本**: v1.1  
 > **最后更新**: 2026-04-04  
 > **类型**: 自动化任务  
-> **描述**: 自动同步指数数据并生成买卖信号
+> **描述**: 自动同步指数数据并生成买卖信号（内部使用）  
+> **公开状态**: ⚠️ 私有技能（不建议公开分享）
 
 ---
 
@@ -15,6 +16,8 @@
 - 📥 **数据同步**: 从Tushare同步指数数据到本地数据库
 - 📊 **信号计算**: 基于多因子模型 + XGBoost计算买卖信号
 - 📤 **结果输出**: 生成信号报告和投资建议
+
+注意: Tushare Token已配置在项目配置文件中，无需在命令行指定。
 
 ---
 
@@ -32,25 +35,16 @@
 
 ```bash
 copaw skills run stock_analysis_signal_generator ^
-  --agent-id <agent-id> ^
-  --tushare-token <your-tushare-token>
+  --agent-id <agent-id>
 ```
 
-### 指定指数
-
-```bash
-copaw skills run stock_analysis_signal_generator ^
-  --agent-id <agent-id> ^
-  --tushare-token <your-tushare-token> ^
-  --indices "000688.SH,399006.SZ"
-```
+注意: Tushare Token已配置在项目配置文件中，无需额外指定。
 
 ### 仅同步数据
 
 ```bash
 copaw skills run stock_analysis_signal_generator ^
   --agent-id <agent-id> ^
-  --tushare-token <your-tushare-token> ^
   --data-only
 ```
 
@@ -59,8 +53,31 @@ copaw skills run stock_analysis_signal_generator ^
 ```bash
 copaw skills run stock_analysis_signal_generator ^
   --agent-id <agent-id> ^
-  --tushare-token <your-tushare-token> ^
   --signal-only
+```
+
+### 指定指数
+
+```bash
+copaw skills run stock_analysis_signal_generator ^
+  --agent-id <agent-id> ^
+  --indices "000688.SH,399006.SZ"
+```
+
+### 执行投资顾问报告
+
+```bash
+copaw skills run stock_analysis_signal_generator ^
+  --agent-id <agent-id> ^
+  --advisor
+```
+
+### 执行信号分析报告
+
+```bash
+copaw skills run stock_analysis_signal_generator ^
+  --agent-id <agent-id> ^
+  --report
 ```
 
 ---
@@ -70,11 +87,14 @@ copaw skills run stock_analysis_signal_generator ^
 | 参数 | 必填 | 说明 | 示例 |
 |------|------|------|------|
 | `--agent-id` | 是 | Agent标识符 | `--agent-id default` |
-| `--tushare-token` | 是 | Tushare Pro API Token | `--tushare-token abc123` |
 | `--indices` | 否 | 指数代码（逗号分隔） | `--indices "000688.SH,399006.SZ"` |
 | `--start-date` | 否 | 数据起始日期 | `--start-date 20230101` |
 | `--data-only` | 否 | 仅执行数据同步 | `--data-only` |
 | `--signal-only` | 否 | 仅执行信号计算 | `--signal-only` |
+| `--advisor` | 否 | 生成投资顾问报告 | `--advisor` |
+| `--report` | 否 | 生成信号分析报告 | `--report` |
+
+注意: Tushare Token已配置在项目配置文件中，无需额外指定。
 
 ---
 
@@ -202,6 +222,7 @@ copaw cron create ^
 
 ## 注意事项
 
-- Tushare API有调用频率限制
+- 项目已内置Tushare Token配置，无需在命令行指定
 - 建议配置定时任务而非频繁手动执行
 - 输出文件保存在项目目录的`signals/`和`report/`下
+- 本Skill为内部使用，不建议公开分享
