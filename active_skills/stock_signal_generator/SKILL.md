@@ -1,3 +1,16 @@
+---
+name: stock_analysis_signal_generator
+description: "Read and summarize text-based file types only. Prefer read_file for text formats; use execute_shell_command for type detection when needed. PDF/Office/images/archives are handled by other skills."
+metadata:
+  {
+    "builtin_skill_version": "1.1",
+    "copaw":
+      {
+        "emoji": "📈",
+        "requires": {}
+      }
+  }
+---
 # 股市数据同步与信号生成
 
 > **技能ID**: `stock_analysis_signal_generator`  
@@ -165,7 +178,7 @@ signal:
 copaw cron create ^
   --name "stock_signal_generator" ^
   --schedule "0 4 * * *" ^
-  --command "copaw skills run stock_analysis_signal_generator --agent-id default --tushare-token YOUR_TOKEN" ^
+  --command "copaw skills run stock_analysis_signal_generator --agent-id default" ^
   --agent-id default
 ```
 
