@@ -1,0 +1,7 @@
+{
+  "name": "stock_daily_scheduler",
+  "version": "2.0.0",
+  "private": true,
+  "description": "A股市场每日分析调度器",
+  "author": "Zeno"
+}

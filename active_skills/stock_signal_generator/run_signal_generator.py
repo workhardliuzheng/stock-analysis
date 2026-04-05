@@ -85,10 +85,12 @@ def sync_data(indices, start_date, tushare_token):
         try:
             logger.info(f"[数据同步] 正在同步 {code}...")
             
+            # 设置 Tushare token 到环境变量
+            os.environ['TUSHARE_TOKEN'] = tushare_token
+            
             analyzer = IndexAnalyzer(
-                index_code=code,
-                start_date=start_date,
-                tushare_token=tushare_token
+                ts_code=code,
+                start_date=start_date
             )
             result = analyzer.analyze(include_ml=False)
             
@@ -114,10 +116,12 @@ def calculate_signals(indices, start_date, tushare_token):
             logger.info(f"[信号计算] 正在计算 {code} 的信号...")
             
             # 1. 加载数据
+            # 设置 Tushare token 到环境变量
+            os.environ['TUSHARE_TOKEN'] = tushare_token
+            
             analyzer = IndexAnalyzer(
-                index_code=code,
-                start_date=start_date,
-                tushare_token=tushare_token
+                ts_code=code,
+                start_date=start_date
             )
             data = analyzer.analyze(include_ml=True)
             
@@ -173,10 +177,12 @@ def generate_full_report(indices, start_date, tushare_token):
             logger.info(f"[完整报告] 正在处理 {code}...")
             
             # 1. 加载数据
+            # 设置 Tushare token 到环境变量
+            os.environ['TUSHARE_TOKEN'] = tushare_token
+            
             analyzer = IndexAnalyzer(
-                index_code=code,
-                start_date=start_date,
-                tushare_token=tushare_token
+                ts_code=code,
+                start_date=start_date
             )
             data = analyzer.analyze(include_ml=True)
             

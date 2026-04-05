@@ -1,0 +1,8 @@
+{
+  "id": "stock_analysis_signal_generator",
+  "name": "股票分析系统数据与信号",
+  "version": "1.1.0",
+  "author": "Zeno",
+  "description": "自动化股市数据同步与信号生成（内部使用）",
+  "private": true
+}
