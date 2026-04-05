@@ -24,14 +24,12 @@ from email.header import Header
 import sys
 import os
 
-# 邮件配置 - 请修改为您自己的配置
-SMTP_SERVER = "smtp.gmail.com"  # Gmail SMTP服务器
-SMTP_PORT = 587                 # TLS端口
-SMTP_USER = ""                  # 您的邮箱地址
-SMTP_PASSWORD = ""              # 您的邮箱密码或授权码
-
-# 接收通知的邮箱（可以是飞书邮箱，也可以是任何邮箱）
-FEISHU_EMAIL_RECIPIENT = ""
+# 邮件配置 - 网易邮箱
+SMTP_SERVER = "smtp.163.com"    # 网易邮箱SMTP服务器
+SMTP_PORT = 465                 # SSL端口
+SMTP_USER = "workhardliuzheng@163.com"  # 您的网易邮箱
+SMTP_PASSWORD = "UBnHVwGi2QG3JEA2"  # 客户端授权码
+FEISHU_EMAIL_RECIPIENT = "workhardliuzheng@163.com"  # 收件邮箱
 
 
 def send_email(subject, content, recipients=None):
@@ -53,8 +51,8 @@ def send_email(subject, content, recipients=None):
     # 检查配置
     if not SMTP_USER or not SMTP_PASSWORD:
         print("[ERROR] 邮件SMTP配置不完整")
-        print(f"  SMTP_USER: {SMTP_USER or '未配置'}")
-        print(f"  SMTP_PASSWORD: {'*' * len(SMTP_PASSWORD) if SMTP_PASSWORD else '未配置'}")
+        print("  SMTP_USER: " + (SMTP_USER or "未配置"))
+        print("  SMTP_PASSWORD: " + ("*" * len(SMTP_PASSWORD) if SMTP_PASSWORD else "未配置"))
         return False
     
     if not recipients or not recipients[0]:
@@ -98,18 +96,21 @@ def send_email(subject, content, recipients=None):
     try:
         print(f"[OK] 正在连接SMTP服务器: {SMTP_SERVER}:{SMTP_PORT}")
         
-        # 创建SMTP连接（使用STARTTLS）
-        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
-        server.starttls(context=ssl.create_default_context())
+        # 网易邮箱SSL端口465需要使用SMTP_SSL
+        if SMTP_PORT == 465:
+            server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10)
+        else:
+            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
+            server.starttls(context=ssl.create_default_context())
         server.login(SMTP_USER, SMTP_PASSWORD)
         
         # 发送邮件
         server.sendmail(SMTP_USER, recipients, message.as_string())
         server.quit()
         
-        print(f"[OK] 邮件发送成功！")
+        print("[OK] 邮件发送成功！")
         print(f"  发件人: {SMTP_USER}")
-        print(f"  收件人: {', '.join(recipients)}")
+        print("  收件人: " + recipients[0])
         print(f"  主题: {subject}")
         
         return True
@@ -122,11 +123,12 @@ def send_email(subject, content, recipients=None):
         print("  3. Gmail用户需要开启'允许不够安全的应用'或使用应用专用密码")
         return False
         
-    except smtplib.SMTPConnectorError as e:
-        print(f"[ERROR] SMTP连接失败: {e}")
+    except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as e:
+        print("[ERROR] SMTP连接失败: " + str(e))
         print("  请检查:")
         print("  1. SMTP服务器地址和端口是否正确")
         print("  2. 网络连接是否正常")
+        print("  3. 网易邮箱SSL端口应使用465")
         return False
         
     except Exception as e:
@@ -156,9 +158,9 @@ def test_email():
         return False
     
     # 测试内容
-    subject = "📧 测试邮件 - A股投资顾问系统"
+    subject = "[测试邮件] A股投资顾问系统"
     content = f"""
-    <h3>📧 测试邮件</h3>
+    <h3>测试邮件</h3>
     <p>这是一封测试邮件，用于验证邮件通知功能是否正常。</p>
     
     <h4>配置信息</h4>
@@ -177,12 +179,12 @@ def test_email():
         <li>系统运行状态</li>
     </ul>
     
-    <h3>✅ 配置成功！</h3>
+    <h3>配置成功！</h3>
     <p>您的邮件通知功能已准备就绪！</p>
     
     <hr>
     <p style="color: #666; font-size: 12px;">
-        ℹ️ 这是系统自动发送的测试邮件，请勿回复。
+        这是系统自动发送的测试邮件，请勿回复。
     </p>
     """
     
