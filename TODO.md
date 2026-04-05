@@ -318,7 +318,40 @@
 
 ---
 
-### 最近更新 (2026-04-03)
+### 最近更新 (2026-04-05)
+
+#### ✅ 飞书API集成 (进行中)
+- **状态**: ⏳ 进行中
+- **文件**: `feishu_client.py`, `feishu_webhook.py`
+- **进展**:
+  - ✅ Access Token获取成功
+  - ✅ 用户信息获取成功 (open_id: ou_0da6279ffcdf474a5d4a65bf8745eb11)
+  - ⏳ 消息发送测试中 (API验证问题)
+- **挑战**: 飞书机器人应用私人消息发送需要配置消息权限
+- **解决方案**: 
+  - 方案A: 配置机器人消息权限（需要在飞书开发者后台操作）
+  - 方案B: 使用群机器人Webhook方式（更简单）
+- **建议**: 优先使用Webhook方式，添加机器人到投资顾问群聊获取Webhook URL
+
+#### ✅ Daily Scheduler 调度器 (已完成)
+- **状态**: [x] 已实现
+- **文件**: `daily_scheduler.py` (10,658行)
+- **功能**: 每日16:00自动运行数据同步+信号计算+报告生成
+- **跳过项**: 全量数据同步（仅同步指数数据+实时信号计算）
+- **报告生成**: `reports/daily_report_YYYYMMDD.md`
+
+#### ✅ Skill模块开发 (已完成)
+- **状态**: [x] 已实现
+- **文件**: `active_skills/stock_signal_generator/`
+- **配置**: `"private": true` (私有模块)
+- **Tushare Token**: 从`config.yaml`读取，不暴露CLI参数
+- **内容**:
+  - ✅ 数据同步模块 (`sync_data.py`)
+  - ✅ 信号计算模块 (`calculate_signals.py`)
+  - ✅ 主程序 (`run_signal_generator.py`)
+  - ✅ 投资顾问模块 (`investment_advisor.py`)
+  - ✅ 报告生成模块 (`report_generator.py`)
+  - ✅ 飞书客户端 (`feishu_client.py`)
 
 #### ✅ V7-4 信号阈值优化 (已完成)
 - **状态**: [x] 已实现
@@ -326,7 +359,7 @@
 - **效果**: BUY/SELL信号频率提升4300% (1.8% → 78.5%)
 - **回测**: 见 BACKTEST_LOG.md #11
 - **详情**: 
-  -科创50 BUY信号 371条 (48.4%)
+  - 科创50 BUY信号 371条 (48.4%)
   - 科创50 SELL信号 230条 (30.0%)
   - 科创50 HOLD信号 165条 (21.5%)
 
