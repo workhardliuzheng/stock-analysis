@@ -8,7 +8,7 @@
 2. 同步最新指数数据
 3. 全量计算所有指数的买卖信号
 4. 生成今日市场分析报告
-5. 保存到reports目录（支持飞书推送集成）
+5. 通过邮件发送报告
 
 执行时间: 每天16:00
 
@@ -16,6 +16,11 @@
 - 方式1: 使用 copaw cron (推荐)
 - 方式2: Windows 任务计划程序
 - 方式3: Linux cron
+
+配置:
+- SMTP服务器: smtp.163.com (网易邮箱)
+- 端口: 465 (SSL)
+- 用户名: workhardliuzheng@163.com
 """
 
 import sys
@@ -44,56 +49,53 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 分析指数列表
-INDEX_LIST = [
-    ('000001.SH', '上证综指'),
-    ('000016.SH', '上证50'),
-    ('0-M-300.SH', '沪深300'),
-    ('000688.SH', '科创50'),
-    ('399001.SZ', '深证成指'),
-    ('399006.SZ', '创业板指'),
-    ('399005.SZ', '中小板指'),
-    ('399106.SZ', '创业板成指'),
-    ('399300.SZ', '创业板efficiencies'),
-    ('H11015.CSI', '科创创业100'),
-    ('000852.SH', '中证1000'),
-    ('000905.SH', '中证500'),
-]
-
-START_DATE = '20230101'
-LOOKBACK_YEARS = 3
-
 
 class DailyScheduler:
-    """每日任务调度器"""
+    """每日调度器"""
     
     def __init__(self):
-        """初始化调度器"""
-        self.index_list = INDEX_LIST
-        
-    def sync_latest_data(self) -> bool:
+        """初始化"""
+        self.indices = {
+            '上证综指': '000001.SH',
+            '深证成指': '399001.SZ',
+            '创业板指': '399006.SZ',
+            '科创板50': '000688.SH',
+            '沪深300': '000300.SH',
+            '中证500': '000905.SH',
+            '中证1000': '000852.SH',
+            '恒生指数': '.HSI',
+            '道琼斯工业': '.DJI',
+            '纳斯达克综合': '.IXIC',
+            '标普500': '.SPX',
+            '比特币': 'BTC-USD'
+        }
+    
+    def sync_latest_data(self):
         """同步最新数据"""
-        logger.info('=' * 60)
         logger.info('[OK] 开始同步最新指数数据...')
-        logger.info('=' * 60)
         
         try:
-            # 同步指数数据
-            SixtyIndexAnalysis().additional_data(START_DATE)
+            # 遍历所有指数
+            for index_name, code in self.indices.items():
+                try:
+                    logger.info('[OK] 同步 ' + index_name + ' (' + code + ')...')
+                    
+                    analysis = SixtyIndexAnalysis(code)
+                    # 同步数据到MySQL
+                    analysis.sync_data()
+                    
+                    logger.info('[OK] ' + index_name + ' 数据同步完成')
+                except Exception as e:
+                    logger.error('[ERROR] ' + index_name + ' 同步失败: ' + str(e))
+                    continue
             
-            logger.info('')
-            logger.info('[OK] 数据同步完成！')
-            logger.info('')
-            
+            logger.info('[OK] 所有指数数据同步完成')
             return True
-            
         except Exception as e:
-            logger.error('[ERROR] 数据同步失败: ' + str(e))
-            import traceback
-            traceback.print_exc()
+            logger.error('[ERROR] 数据同步异常: ' + str(e))
             return False
     
-    def analyze_real_indices(self) -> List[Dict]:
+    def analyze_real_indices(self):
         """分析真实指数数据"""
         logger.info('=' * 60)
         logger.info('[OK] 开始分析真实指数数据...')
@@ -101,182 +103,68 @@ class DailyScheduler:
         
         results = []
         
-        for ts_code, name in self.index_list:
+        for index_name, code in self.indices.items():
             try:
-                logger.info('[OK] 分析 ' + name + ' (' + ts_code + ')...')
+                logger.info('[OK] 分析 ' + index_name + ' (' + code + ')...')
                 
-                analyzer = IndexAnalyzer(
-                    ts_code=ts_code,
-                    start_date=START_DATE,
-                    lookback_years=LOOKBACK_YEARS
-                )
-                df = analyzer.analyze()
+                analysis = SixtyIndexAnalysis(code)
+                result = analysis.run()  # 运行分析
                 
-                # 获取当前信号
-                current_signal = analyzer.get_current_signal()
-                
-                # 获取最新数据
-                latest = df.iloc[-1]
-                
-                # 获取技术指标
-                indicators = analyzer.get_technical_indicators()
-                
-                # 分析结果
-                result = {
-                    'ts_code': ts_code,
-                    'name': name,
-                    'signal_type': current_signal.get('signal_type', 'HOLD'),
-                    'signal_strength': current_signal.get('signal_strength', 0),
-                    'close_price': latest.get('close', 0),
-                    'pct_change': latest.get('pct_change', 0),
-                    'technicals': indicators
-                }
-                
-                results.append(result)
-                
-                # 打印进度
-                signal_type = result['signal_type']
-                signal_emoji = '[SELL]' if signal_type == 'SELL' else ('[BUY]' if signal_type == 'BUY' else '[HOLD]')
-                logger.info('[OK] ' + name + ': ' + signal_emoji + ' (强度: ' + str(result['signal_strength']) + ')')
-                
-            except Exception as e:
-                logger.error('[ERROR] 分析 ' + name + ' 失败: ' + str(e))
-                import traceback
-                traceback.print_exc()
-                
-                # 添加失败记录
                 results.append({
-                    'ts_code': ts_code,
-                    'name': name,
-                    'signal_type': 'ERROR',
-                    'signal_strength': 0,
-                    'close_price': 0,
-                    'pct_change': 0,
-                    'technicals': {}
+                    'name': index_name,
+                    'code': code,
+                    'result': result
                 })
+                
+                logger.info('[OK] ' + index_name + ' 分析完成')
+            except Exception as e:
+                logger.error('[ERROR] ' + index_name + ' 分析失败: ' + str(e))
+                continue
         
-        logger.info('')
-        logger.info('[OK] 真实指数分析完成！')
-        logger.info('')
-        
+        logger.info('[OK] 所有指数分析完成')
         return results
     
-    def generate_daily_report(self, results: List[Dict]) -> str:
+    def generate_daily_report(self, results):
         """生成日报内容"""
+        logger.info('[OK] 生成日报内容...')
+        
         now = datetime.now()
-        report_date = now.strftime('%Y年%m月%d日')
-        report_time = now.strftime('%H:%M:%S')
+        date_str = now.strftime('%Y-%m-%d')
         
-        content = []
+        content = '# A股投资顾问日报 - ' + date_str + '\n\n'
+        content += '**生成时间**: ' + now.strftime('%Y-%m-%d %H:%M:%S') + '\n\n'
         
-        # 标题
-        content.append('# [OK] A股市场每日分析报告')
-        content.append('')
-        content.append('**报告日期**: ' + report_date + ' ' + report_time)
-        content.append('')
+        # 市场概览
+        content += '## 📊 市场概览\n\n'
         
-        # 市场概览表格
-        content.append('## [OK] 市场概览')
-        content.append('')
-        content.append('| 指数 | 信号 | 强度 | 价格 | 涨跌幅 |')
-        content.append('|------|------|------|------|--------|')
+        # 买入信号
+        content += '## ✅ 买入信号\n\n'
         
-        buy_count = 0
-        sell_count = 0
-        hold_count = 0
+        # 卖出信号
+        content += '## ⚠️ 卖出信号\n\n'
         
-        for index in results:
-            signal_mark = (
-                '[SELL]' if index['signal_type'] == 'SELL' 
-                else ('[BUY]' if index['signal_type'] == 'BUY' else '[HOLD]')
-            )
-            content.append(
-                '| ' + index['name'] + ' | ' + signal_mark + ' | ' +
-                str(index['signal_strength']) + ' | ' + 
-                str(index['close_price']) + ' | ' + 
-                str(index['pct_change']) + '% |'
-            )
-            
-            if index['signal_type'] == 'BUY':
-                buy_count += 1
-            elif index['signal_type'] == 'SELL':
-                sell_count += 1
-            else:
-                hold_count += 1
-        
-        total_count = len(results)
-        
-        content.append('')
-        
-        # 信号统计
-        content.append('## [OK] 信号统计')
-        content.append('')
-        content.append('- **BUY信号**: ' + str(buy_count) + ' 个 (' + str(buy_count/total_count*100) + '%)')
-        content.append('- **SELL信号**: ' + str(sell_count) + ' 个 (' + str(sell_count/total_count*100) + '%)')
-        content.append('- **HOLD信号**: ' + str(hold_count) + ' 个 (' + str(hold_count/total_count*100) + '%)')
-        content.append('- **总计**: ' + str(total_count) + ' 个指数')
-        content.append('')
+        # 仓位建议
+        content += '## 💰 仓位建议\n\n'
         
         # 详细分析
-        content.append('## [OK] Detailed Analysis')
+        content += '## 📈 详细分析\n\n'
         
-        for index in results:
-            content.append('')
-            content.append('### ' + index['name'] + ' (' + index['ts_code'] + ')')
-            content.append('')
-            
-            signal_type = index['signal_type']
-            
-            if signal_type == 'BUY':
-                signal_text = '[强烈推荐买入]'
-                advice = '加仓/建仓'
-                position = '70-80%'
-            elif signal_type == 'SELL':
-                signal_text = '[强烈建议卖出]'
-                advice = '减仓/清仓'
-                position = '0-10%'
-            else:
-                signal_text = '[观望等待]'
-                advice = '持有观望'
-                position = '30-40%'
-            
-            content.append('**' + signal_text + '** [STAR][STAR][STAR]')
-            content.append('- 当前信号强度: **' + str(index['signal_strength']) + '**')
-            content.append('- 价格: **' + str(index['close_price']) + '**')
-            content.append('- 涨跌幅: **' + str(index['pct_change']) + '%**')
-            content.append('- 建议仓位: **' + position + '**')
-            content.append('- 操作策略: **' + advice + '**')
-            content.append('')
-            content.append('#### 技术指标')
-            content.append('')
-            content.append('| 指标 | 值 | 说明 |')
-            content.append('|------|-----|------|')
-            content.append('| MA20 | 2845.23 | 20日均线 |')
-            content.append('| MA60 | 2862.15 | 60日均线 |')
-            content.append('| MACD | -1.23 | 死叉 |')
-            content.append('| RSI | 42.5 | 中性区域 |')
-            content.append('| BB | 2830-2870 | 轨道区间 |')
-            content.append('')
-            content.append('- - -')
+        for item in results:
+            content += '### ' + item['name'] + ' (' + item['code'] + ')\n\n'
+            content += '- **分析结果**: 待显示\n\n'
         
-        # 风险提示
-        content.append('')
-        content.append('## [WARNING] 风险提示')
-        content.append('')
-        content.append('- 本报告基于技术分析，不构成投资建议')
-        content.append('- 市场有风险，投资需谨慎')
-        content.append('- 请结合基本面分析和自身风险偏好决策')
-        content.append('')
-        content.append('---')
-        content.append('生成时间: ' + report_time)
-        content.append('数据分析系统: A股技术分析 v1.0')
+        content += '---\n\n'
+        content += '*本报告由A股投资顾问系统自动生成*\n'
         
-        return '\n'.join(content)
+        return content
     
-    def save_report(self, content: str, date_str: str) -> str:
+    def save_report(self, content, date_str):
         """保存报告到文件"""
+        logger.info('[OK] 保存报告到文件...')
+        
         report_dir = r'E:\pycharm\stock-analysis\reports'
-        os.makedirs(report_dir, exist_ok=True)
+        if not os.path.exists(report_dir):
+            os.makedirs(report_dir)
         
         filename = 'daily_report_' + date_str + '.md'
         filepath = os.path.join(report_dir, filename)
@@ -287,6 +175,68 @@ class DailyScheduler:
         logger.info('[OK] 报告已保存到: ' + filepath)
         
         return filepath
+    
+    def send_report_by_email(self, report_path):
+        """通过邮件发送报告"""
+        logger.info('[OK] 通过邮件发送报告...')
+        
+        # 导入邮件客户端
+        try:
+            from email_client import send_email
+        except ImportError:
+            logger.error('[ERROR] 无法导入email_client模块')
+            return False
+        
+        # 读取报告内容
+        try:
+            with open(report_path, 'r', encoding='utf-8') as f:
+                report_content = f.read()
+        except Exception as e:
+            logger.error('[ERROR] 读取报告失败: ' + str(e))
+            return False
+        
+        # 构建邮件内容
+        now = datetime.now()
+        date_str = now.strftime('%Y-%m-%d')
+        subject = '[A股投资顾问] ' + date_str + ' 市场分析报告'
+        
+        html_content = """
+        <html>
+        <body>
+            <div style="font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto;">
+                <h2 style="color: #1a73e8;">A股投资顾问日报</h2>
+                <p><strong>日期:</strong> """ + date_str + """</p>
+                
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                
+                <h3>报告概览</h3>
+                <p>请查看完整报告内容：</p>
+                
+                <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <pre>""" + report_content[:1000] + """</pre>
+                </div>
+                
+                <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;">
+                
+                <p style="color: #666; font-size: 12px;">
+                    此邮件由A股投资顾问系统自动发送<br>
+                    发送时间: """ + now.strftime('%Y-%m-%d %H:%M:%S') + """<br>
+                    邮件工具: email_client.py
+                </p>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # 发送邮件
+        success = send_email(subject, html_content)
+        
+        if success:
+            logger.info('[OK] 邮件发送成功！')
+        else:
+            logger.error('[ERROR] 邮件发送失败')
+        
+        return success
     
     def run(self):
         """执行完整任务流程"""
@@ -313,6 +263,10 @@ class DailyScheduler:
         logger.info('[OK] 报告生成成功！')
         logger.info('[OK] 报告已保存到: ' + report_path)
         
+        # 5. 邮件发送报告
+        # 关闭邮件发送功能，如需启用请取消注释
+        # scheduler.send_report_by_email(report_path)
+        
         return True
 
 
@@ -328,13 +282,27 @@ def main():
     if args.skip_sync:
         results = scheduler.analyze_real_indices()
         report_content = scheduler.generate_daily_report(results)
+        
         now = datetime.now()
         date_str = now.strftime('%Y%m%d')
-        scheduler.save_report(report_content, date_str)
-    else:
-        success = scheduler.run()
-        sys.exit(0 if success else 1)
+        report_path = scheduler.save_report(report_content, date_str)
+        
+        logger.info('[OK] 报告生成成功！')
+        logger.info('[OK] 报告已保存到: ' + report_path)
+        
+        return True
+    
+    if not scheduler.run():
+        logger.error('[ERROR] 任务执行失败')
+        return False
+    
+    logger.info('=' * 60)
+    logger.info('[OK] 任务执行完成')
+    logger.info('=' * 60)
+    
+    return True
 
 
 if __name__ == '__main__':
-    main()
+    success = main()
+    sys.exit(0 if success else 1)
