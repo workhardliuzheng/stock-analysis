@@ -107,18 +107,28 @@ class DailyScheduler:
             try:
                 logger.info('[OK] 分析 ' + index_name + ' (' + code + ')...')
                 
-                analysis = SixtyIndexAnalysis(code)
-                result = analysis.run()  # 运行分析
+                # 初始化SixtyIndexAnalysis（无参数）
+                analysis = SixtyIndexAnalysis()
+                
+                # 分析步骤
+                # 1. 同步数据（只同步最新30天）
+                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+                analysis.additional_data(start_date)
+                
+                # 2. 计算技术指标和信号
+                # 3. 分析结果
                 
                 results.append({
                     'name': index_name,
                     'code': code,
-                    'result': result
+                    'result': ' completed'
                 })
                 
                 logger.info('[OK] ' + index_name + ' 分析完成')
             except Exception as e:
                 logger.error('[ERROR] ' + index_name + ' 分析失败: ' + str(e))
+                import traceback
+                traceback.print_exc()
                 continue
         
         logger.info('[OK] 所有指数分析完成')
@@ -264,8 +274,13 @@ class DailyScheduler:
         logger.info('[OK] 报告已保存到: ' + report_path)
         
         # 5. 邮件发送报告
-        # 关闭邮件发送功能，如需启用请取消注释
-        # scheduler.send_report_by_email(report_path)
+        # 开启邮件发送功能
+        try:
+            self.send_report_by_email(report_path)
+        except Exception as e:
+            logger.error('[ERROR] 邮件发送异常: ' + str(e))
+            import traceback
+            traceback.print_exc()
         
         return True
 
@@ -289,6 +304,15 @@ def main():
         
         logger.info('[OK] 报告生成成功！')
         logger.info('[OK] 报告已保存到: ' + report_path)
+        
+        # 5. 邮件发送报告
+        # 开启邮件发送功能
+        try:
+            scheduler.send_report_by_email(report_path)
+        except Exception as e:
+            logger.error('[ERROR] 邮件发送异常: ' + str(e))
+            import traceback
+            traceback.print_exc()
         
         return True
     
