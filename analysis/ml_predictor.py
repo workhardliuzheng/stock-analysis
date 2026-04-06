@@ -8,17 +8,12 @@
 - v1: 二分类模型 (XGBClassifier)，标签为次日涨跌方向
 - v2: 回归模型 (XGBRegressor)，标签为次日实际收益率
       + Optuna 超参数自动调优 (Walk-Forward 框架内)
-- v3: 特征工程优化 - 特征重要性筛选
-      + 用XGBoost特征重要性筛选关键特征
-      + 用随机森林特征重要性交叉验证
-      + 用互信息/信息熵计算特征与目标的相关性
 """
 
 import json
 import os
 import pickle
 from typing import Optional, Dict, List
-from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -36,34 +31,11 @@ except ImportError:
     HAS_SKLEARN = False
 
 try:
-    from sklearn.ensemble import RandomForestRegressor
-    HAS_RANDOM_FOREST = True
-except ImportError:
-    HAS_RANDOM_FOREST = False
-
-try:
-    from sklearn.feature_selection import mutual_info_regression
-    HAS_MUTUAL_INFO = True
-except ImportError:
-    HAS_MUTUAL_INFO = False
-
-try:
     import optuna
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     HAS_OPTUNA = True
 except ImportError:
     HAS_OPTUNA = False
-
-try:
-    from .feature_cross_engine import FeatureCrossEngine
-    HAS_CROSS_ENGINE = True
-except ImportError:
-    HAS_CROSS_ENGINE = False
-    class FeatureCrossEngine:
-        def __init__(self):
-            pass
-        def generate_all_features(self, df, feature_columns):
-            return df, feature_columns
 
 
 class MLPredictor:
@@ -106,136 +78,49 @@ class MLPredictor:
     # 信号阈值 (默认值，实际使用自适应阈值)
     BUY_THRESHOLD = 0.1        # 默认买入阈值 (会被自适应阈值覆盖)
     SELL_THRESHOLD = -0.1      # 默认卖出阈值 (会被自适应阈值覆盖)
-    THRESHOLD_VOL_FACTOR = 0.08  # 自适应阈值 = 波动率 * 此因子（从0.12降低至0.08，增加30%信号）
+    THRESHOLD_VOL_FACTOR = 0.12  # 自适应阈值 = 波动率 * 此因子
 
     # Optuna 配置
     OPTUNA_N_TRIALS = 50       # 搜索次数
     OPTUNA_WF_FOLDS = 3        # Walk-Forward 折数 (用于调优评估)
 
-    def __init__(self, model_params: Optional[dict] = None,
-                 feature_selection: bool = False,
-                 max_features: int = 20):
-        """
-        Args:
-            model_params: XGBoost模型参数
-            feature_selection: 是否进行特征重要性筛选
-            max_features: 保留的最大特征数量（筛选后）
-        """
+    def __init__(self, model_params: Optional[dict] = None):
         if not HAS_XGBOOST:
             raise ImportError("xgboost 未安装，请运行: pip install xgboost")
         if not HAS_SKLEARN:
             raise ImportError("scikit-learn 未安装，请运行: pip install scikit-learn")
 
         self.model_params = model_params or self.DEFAULT_PARAMS.copy()
-        self.feature_selection = feature_selection
-        self.max_features = max_features
         self.model = None
         self.feature_columns: List[str] = []
         self._return_std = 1.0  # 收益率标准差，用于 sigmoid 缩放
         self._adaptive_buy_threshold = self.BUY_THRESHOLD
         self._adaptive_sell_threshold = self.SELL_THRESHOLD
         self._flip_signals = False  # 反转模式: IC 持续为负时启用
-        self._feature_cross_engine = FeatureCrossEngine()  # 特征交叉引擎
-        self._historical_signals = pd.Series(dtype='object')  # 历史信号，用于计算交易频率
 
     # ==================== 自适应阈值 ====================
 
-    def _calculate_adaptive_thresholds(self, returns: pd.Series, 
-                                       market_volatility: Optional[float] = None,
-                                       recent_trade_frequency: Optional[float] = None) -> tuple:
+    def _calculate_adaptive_thresholds(self, returns: pd.Series) -> tuple:
         """
-        基于多维度计算自适应信号阈值
+        基于历史收益率波动率计算自适应信号阈值
 
-        优化点:
-        1. 指数波动率: 高波动指数需要更高阈值，避免过度交易
-        2. 市场波动率: 市场整体高波动时，提高阈值减少噪音交易
-        3. 交易频率: 近期交易频繁时，提高阈值降低频率
+        不同指数波动率差异较大 (上证50 ~0.7%, 中证500 ~1.0%),
+        使用固定阈值会导致低波动指数过度交易、高波动指数信号不足。
 
-        公式: 
-            base_threshold = volatility * THRESHOLD_VOL_FACTOR
-            market_adjustment = 1 + (market_vol - avg_market_vol) * 0.5
-            frequency_adjustment = 1 + (recent_freq - target_freq) * 0.3
-            final_threshold = base_threshold * market_adjustment * frequency_adjustment
-            final_threshold = clamp(final_threshold, min=0.03, max=0.15)
+        公式: threshold = max(0.05, volatility * THRESHOLD_VOL_FACTOR)
 
         Args:
             returns: 历史收益率序列 (pct_chg)
-            market_volatility: 市场波动率（如沪深300的波动率）
-            recent_trade_frequency: 近期交易频率（0-1之间）
 
         Returns:
             tuple: (buy_threshold, sell_threshold)
         """
-        # 1. 基础阈值 - 基于指数波动率
         vol = returns.dropna().std()
         if np.isnan(vol) or vol < 0.1:
             vol = 1.0  # 默认波动率 1%
-        
-        base_threshold = vol * self.THRESHOLD_VOL_FACTOR
-        
-        # 2. 市场波动率调整
-        market_adjustment = 1.0
-        if market_volatility is not None and not np.isnan(market_volatility):
-            # 市场波动率基准设为1.0%，高于基准时提高阈值
-            avg_market_vol = 1.0  # 市场平均波动率
-            market_adjustment = 1.0 + (market_volatility - avg_market_vol) * 0.5
-            market_adjustment = np.clip(market_adjustment, 0.8, 1.5)  # 限制在0.8-1.5倍
-        
-        # 3. 交易频率调整
-        frequency_adjustment = 1.0
-        if recent_trade_frequency is not None and not np.isnan(recent_trade_frequency):
-            # 目标交易频率约为20%（每5天交易一次）
-            target_frequency = 0.2
-            frequency_adjustment = 1.0 + (recent_trade_frequency - target_frequency) * 0.3
-            frequency_adjustment = np.clip(frequency_adjustment, 0.7, 1.3)  # 限制在0.7-1.3倍
-        
-        # 4. 计算最终阈值
-        final_threshold = base_threshold * market_adjustment * frequency_adjustment
-        
-        # 5. 限制阈值范围
-        # 最低0.03%（小盘股激进阈值），最高0.15%（大盘股保守阈值）
-        final_threshold = np.clip(final_threshold, 0.03, 0.15)
-        
-        return final_threshold, -final_threshold
 
-    def _calculate_market_volatility(self, df: pd.DataFrame) -> float:
-        """
-        计算市场波动率（基于沪深300或综合指数）
-        
-        Args:
-            df: 包含市场数据的DataFrame
-            
-        Returns:
-            float: 市场波动率
-        """
-        if 'pct_chg' in df.columns and len(df) > 20:
-            # 使用最近20天的市场波动率
-            recent_returns = df['pct_chg'].tail(20)
-            market_vol = recent_returns.std()
-            if not np.isnan(market_vol):
-                return market_vol
-        return 1.0  # 默认市场波动率
-
-    def _calculate_trade_frequency(self, signals: pd.Series, window: int = 20) -> float:
-        """
-        计算近期交易频率
-        
-        Args:
-            signals: 信号序列（BUY/SELL/HOLD）
-            window: 计算窗口（天数）
-            
-        Returns:
-            float: 交易频率（0-1之间）
-        """
-        if len(signals) < window:
-            return 0.2  # 默认频率
-        
-        recent_signals = signals.tail(window)
-        # 统计非HOLD信号的比例
-        trade_count = (recent_signals != 'HOLD').sum()
-        trade_frequency = trade_count / window
-        
-        return trade_frequency
+        adaptive_thresh = max(0.05, vol * self.THRESHOLD_VOL_FACTOR)
+        return adaptive_thresh, -adaptive_thresh
 
     # ==================== 特征工程 ====================
 
@@ -323,190 +208,10 @@ class MLPredictor:
             result[f'feat_dev_ma{period}'] = result['deviation_rate'].apply(
                 lambda x: self._extract_json_field(x, f'ma_{period}'))
 
-        # 收集初始特征列名
-        initial_features = [c for c in result.columns if c.startswith('feat_') and c not in ['feat_pct_chg']]
-
-        # --- 特征交叉工程 (V7-2优化) ---
-        if HAS_CROSS_ENGINE and self._feature_cross_engine is not None:
-            # 生成交叉特征
-            result, new_features = self._feature_cross_engine.generate_all_features(result)
-            # 更新特征列列表
-            self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
-        else:
-            # 没有特征交叉引擎，直接收集所有特征
-            self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
+        # 收集特征列名
+        self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
 
         return result
-
-    def _select_features(self, df: pd.DataFrame, labels: pd.Series) -> pd.DataFrame:
-        """
-        特征重要性筛选
-        
-        方法:
-        1. 用XGBoost特征重要性筛选
-        2. 用随机森林特征重要性交叉验证
-        3. 用互信息/信息熵计算特征与目标的相关性
-        4. 剔除低重要性特征
-        
-        Args:
-            df: 包含特征的 DataFrame
-            labels: 标签系列
-            
-        Returns:
-            pd.DataFrame: 保留关键特征的 DataFrame
-        """
-        # 准备数据
-        X = df[self.feature_columns].copy()
-        y = labels.values
-        
-        # 删除含有NaN的行
-        valid_mask = ~X.isna().any(axis=1) & ~pd.isna(y)
-        X_valid = X[valid_mask]
-        y_valid = y[valid_mask]
-        
-        if len(X_valid) < 100:
-            print("  数据不足，跳过特征筛选")
-            return df
-        
-        # 1. XGBoost 特征重要性
-        feature_importance_xgb = self._get_xgb_feature_importance(X_valid, y_valid)
-        
-        # 2. 随机森林 特征重要性（如果可用）
-        if HAS_RANDOM_FOREST:
-            feature_importance_rf = self._get_rf_feature_importance(X_valid, y_valid)
-        else:
-            feature_importance_rf = None
-        
-        # 3. 互信息 特征重要性（如果可用）
-        if HAS_MUTUAL_INFO:
-            feature_importance_mi = self._get_mutual_info_importance(X_valid, y_valid)
-        else:
-            feature_importance_mi = None
-        
-        # 综合评分（加权平均）
-        importance_scores = pd.DataFrame({
-            'xgb': feature_importance_xgb
-        })
-        
-        if feature_importance_rf is not None:
-            importance_scores['rf'] = feature_importance_rf
-        
-        if feature_importance_mi is not None:
-            importance_scores['mi'] = feature_importance_mi
-        
-        # 归一化并计算综合评分
-        importance_scores = importance_scores.apply(lambda x: (x - x.min()) / (x.max() - x.min() + 1e-10))
-        
-        if feature_importance_rf is not None and feature_importance_mi is not None:
-            # 三个方法的综合评分（XGBoost权重50%，RF权重30%，MI权重20%）
-            importance_scores['combined'] = (
-                importance_scores['xgb'] * 0.5 + 
-                importance_scores['rf'] * 0.3 + 
-                importance_scores['mi'] * 0.2
-            )
-        elif feature_importance_rf is not None:
-            # 两个方法的综合评分
-            importance_scores['combined'] = (
-                importance_scores['xgb'] * 0.6 + 
-                importance_scores['rf'] * 0.4
-            )
-        else:
-            # 只有XGBoost
-            importance_scores['combined'] = importance_scores['xgb']
-        
-        # 选择最高分的特征
-        selected_indices = importance_scores.nlargest(self.max_features, 'combined').index.tolist()
-        selected_features = [X.columns[i] for i in selected_indices]
-        
-        print(f"  选出关键特征 ({len(selected_features)}): {selected_features}")
-        
-        # 更新feature_columns
-        self.feature_columns = selected_features
-        
-        # 返回 DataFrame 的副本，只包含选中的特征列
-        # 确保保留必要的原始列（用于回测器）
-        required_cols = [c for c in ['close', 'pct_chg', 'vol', 'amount', 'trade_date'] if c in df.columns]
-        return df[selected_features + required_cols]
-    
-    def _get_xgb_feature_importance(self, X: pd.DataFrame, y: np.ndarray) -> np.ndarray:
-        """
-        使用XGBoost计算特征重要性
-        
-        Args:
-            X: 特征 DataFrame
-            y: 标签数组
-            
-        Returns:
-            np.ndarray: 特征重要性分数
-        """
-        try:
-            # 使用简单的XGBoost模型计算特征重要性
-            dtrain = xgb.DMatrix(X.values, label=y)
-            params = {
-                'objective': 'reg:squarederror',
-                'eval_metric': 'rmse',
-                'max_depth': 3,
-                'learning_rate': 0.1,
-                'subsample': 0.8,
-                'colsample_bytree': 0.8,
-                'verbosity': 0
-            }
-            num_boost_round = 50
-            
-            model = xgb.train(params, dtrain, num_boost_round)
-            importance = model.get_score(importance_type='gain')
-            
-            # 转换为与特征列对应的成绩
-            scores = np.zeros(len(X.columns))
-            for i, col in enumerate(X.columns):
-                if col in importance:
-                    scores[i] = importance[col]
-            
-            return scores
-        except Exception as e:
-            print(f"  XGBoost特征重要性计算失败: {e}")
-            return np.ones(len(X.columns))
-    
-    def _get_rf_feature_importance(self, X: pd.DataFrame, y: np.ndarray) -> np.ndarray:
-        """
-        使用随机森林计算特征重要性
-        
-        Args:
-            X: 特征 DataFrame
-            y: 标签数组
-            
-        Returns:
-            np.ndarray: 特征重要性分数
-        """
-        try:
-            model = RandomForestRegressor(
-                n_estimators=100,
-                max_depth=5,
-                random_state=42,
-                n_jobs=-1
-            )
-            model.fit(X, y)
-            return model.feature_importances_
-        except Exception as e:
-            print(f"  随机森林特征重要性计算失败: {e}")
-            return np.ones(len(X.columns))
-    
-    def _get_mutual_info_importance(self, X: pd.DataFrame, y: np.ndarray) -> np.ndarray:
-        """
-        使用互信息计算特征重要性
-        
-        Args:
-            X: 特征 DataFrame
-            y: 标签数组
-            
-        Returns:
-            np.ndarray: 特征重要性分数
-        """
-        try:
-            return mutual_info_regression(X, y, random_state=42)
-        except Exception as e:
-            print(f"  互信息特征重要性计算失败: {e}")
-            return np.ones(len(X.columns))
 
     def _create_labels(self, df: pd.DataFrame) -> pd.Series:
         """
@@ -642,12 +347,6 @@ class MLPredictor:
         featured_df = self.prepare_features(df)
         labels = self._create_labels(featured_df)
         n = len(featured_df)
-        
-        # 特征重要性筛选（在创建标签后进行）
-        if self.feature_selection and len(self.feature_columns) > self.max_features:
-            print(f"  特征筛选: 从 {len(self.feature_columns)} 个特征中筛选出 {self.max_features} 个")
-            featured_df = self._select_features(featured_df, labels)
-            self.feature_columns = [c for c in featured_df.columns if c.startswith('feat_')]
 
         # 初始化预测列
         preds_all = np.full(n, np.nan)
@@ -673,26 +372,13 @@ class MLPredictor:
         valid_returns = labels.loc[valid_mask].values
         self._return_std = max(np.nanstd(valid_returns), 0.1)
 
-        # 自适应信号阈值（基于波动率、市场波动率、交易频率）
+        # 自适应信号阈值（基于波动率）
         pct_chg_series = pd.to_numeric(df['pct_chg'], errors='coerce')
-        
-        # 计算市场波动率
-        market_vol = self._calculate_market_volatility(df)
-        
-        # 计算近期交易频率（如果有历史信号）
-        recent_freq = None
-        if hasattr(self, '_historical_signals') and len(self._historical_signals) > 0:
-            recent_freq = self._calculate_trade_frequency(self._historical_signals)
-        
-        buy_thresh, sell_thresh = self._calculate_adaptive_thresholds(
-            pct_chg_series, 
-            market_volatility=market_vol,
-            recent_trade_frequency=recent_freq
-        )
+        buy_thresh, sell_thresh = self._calculate_adaptive_thresholds(pct_chg_series)
         self._adaptive_buy_threshold = buy_thresh
         self._adaptive_sell_threshold = sell_thresh
         print(f"  自适应阈值: BUY>{buy_thresh:.4f}%, SELL<{sell_thresh:.4f}% "
-              f"(波动率={pct_chg_series.dropna().std():.3f}%, 市场波动={float(market_vol):.3f}%)")
+              f"(波动率={pct_chg_series.dropna().std():.3f}%)")
 
         # Optuna 超参数调优
         if auto_tune:
@@ -757,7 +443,7 @@ class MLPredictor:
         self._flip_signals = False
         if ic < -0.02:
             self._flip_signals = True
-            print(f"  [WARNING] IC={ic:.4f} < -0.02，启用信号反转模式（contrarian mode）")
+            print(f"  ⚠ IC={ic:.4f} < -0.02，启用信号反转模式（contrarian mode）")
             # 翻转预测值: 取反
             preds_all = np.where(np.isnan(preds_all), np.nan, -preds_all)
             # 重新计算翻转后的 IC
@@ -862,9 +548,6 @@ class MLPredictor:
             else:
                 signals.append('HOLD')
         result['ml_signal'] = signals
-
-        # 记录历史信号，用于后续计算交易频率
-        self._historical_signals = pd.Series(signals, index=result.index)
 
         return result, metrics
 
@@ -1024,9 +707,6 @@ class MLPredictor:
                 signals.append('HOLD')
         result['ml_signal'] = signals
 
-        # 记录历史信号，用于后续计算交易频率
-        self._historical_signals = pd.Series(signals, index=result.index)
-
         return result
 
     # ==================== 概率转换 ====================
@@ -1062,31 +742,10 @@ class MLPredictor:
         with open(filepath, 'wb') as f:
             pickle.dump(data, f)
 
-    def load_model(self, filepath: str, use_cache: bool = False, index_code: str = None, date: str = None):
+    def load_model(self, filepath: str):
         """加载模型和特征列名"""
-        # 模型缓存支持
-        if use_cache and index_code and date:
-            try:
-                from analysis.model_cache import ModelCache
-                cache = ModelCache()
-                cached_data = cache.load_model(index_code, date)
-                if cached_data:
-                    data = cached_data
-                else:
-                    with open(filepath, 'rb') as f:
-                        data = pickle.load(f)
-                    # 保存到缓存
-                    cache.save_model(index_code, date, data['model'], {
-                        'feature_columns': data['feature_columns'],
-                        'model_params': data['model_params']
-                    })
-            except Exception as e:
-                print(f"  [缓存失败] {e} - 使用普通加载方式")
-                with open(filepath, 'rb') as f:
-                    data = pickle.load(f)
-        else:
-            with open(filepath, 'rb') as f:
-                data = pickle.load(f)
+        with open(filepath, 'rb') as f:
+            data = pickle.load(f)
         self.model = data['model']
         self.feature_columns = data['feature_columns']
         self.model_params = data.get('model_params', self.DEFAULT_PARAMS)
@@ -1132,43 +791,6 @@ class MLPredictor:
         if isinstance(result, pd.Series):
             result = result.replace([np.inf, -np.inf], np.nan)
         return result
-
-    # ==================== 模型持久化 ====================
-
-    def save_model(self, filepath: str, use_cache: bool = False, index_code: str = None, date: str = None):
-        """
-        保存模型到文件（可选：保存到缓存）
-        
-        Args:
-            filepath: 文件路径
-            use_cache: 是否使用模型缓存
-            index_code: 指数代码（用于缓存）
-            date: 日期（用于缓存）
-        """
-        data = {
-            'model': self.model,
-            'feature_columns': self.feature_columns,
-            'model_params': self.model_params,
-            'return_std': self._return_std,
-            'save_time': datetime.now().isoformat()
-        }
-        
-        # 保存到文件
-        with open(filepath, 'wb') as f:
-            pickle.dump(data, f)
-        
-        # 保存到缓存
-        if use_cache and index_code and date:
-            try:
-                from analysis.model_cache import ModelCache
-                cache = ModelCache()
-                cache.save_model(index_code, date, self.model, {
-                    'feature_columns': self.feature_columns,
-                    'model_params': self.model_params
-                })
-                print(f"  [模型缓存] {index_code} {date} -> {filepath}")
-            except Exception as e:
-                print(f"  [缓存失败] {e}")
 
     @staticmethod
     def _extract_json_field(json_str, field: str) -> Optional[float]:

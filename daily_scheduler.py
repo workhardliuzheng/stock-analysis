@@ -107,28 +107,41 @@ class DailyScheduler:
             try:
                 logger.info('[OK] 分析 ' + index_name + ' (' + code + ')...')
                 
-                # 初始化SixtyIndexAnalysis（无参数）
-                analysis = SixtyIndexAnalysis()
-                
-                # 分析步骤
-                # 1. 同步数据（只同步最新30天）
+                # 1. 同步最新数据
+                logger.info('[OK] 同步最新数据...')
+                sync_analysis = SixtyIndexAnalysis()
                 start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-                analysis.additional_data(start_date)
+                sync_analysis.additional_data(start_date)
                 
-                # 2. 计算技术指标和信号
-                # 3. 分析结果
+                # 2. 使用IndexAnalyzer进行完整分析
+                logger.info('[OK] 执行完整技术分析...')
+                analyzer = IndexAnalyzer(ts_code=code)
+                analysis_df = analyzer.analyze(include_ml=True)
                 
-                results.append({
+                # 3. 提取分析结果
+                latest_row = analysis_df.iloc[-1] if len(analysis_df) > 0 else None
+                
+                result = {
                     'name': index_name,
                     'code': code,
-                    'result': ' completed'
-                })
+                    'final_signal': latest_row['final_signal'] if latest_row is not None else 'N/A',
+                    'final_confidence': latest_row['final_confidence'] if latest_row is not None else 0,
+                    'factor_score': latest_row['factor_score'] if latest_row is not None else 0,
+                    'ml_probability': latest_row['ml_probability'] if latest_row is not None else 0
+                }
                 
-                logger.info('[OK] ' + index_name + ' 分析完成')
+                results.append(result)
+                
+                logger.info('[OK] ' + index_name + ' 分析完成 - 信号: ' + str(result['final_signal']))
             except Exception as e:
                 logger.error('[ERROR] ' + index_name + ' 分析失败: ' + str(e))
                 import traceback
                 traceback.print_exc()
+                results.append({
+                    'name': index_name,
+                    'code': code,
+                    'error': str(e)
+                })
                 continue
         
         logger.info('[OK] 所有指数分析完成')
@@ -147,21 +160,60 @@ class DailyScheduler:
         # 市场概览
         content += '## 📊 市场概览\n\n'
         
-        # 买入信号
-        content += '## ✅ 买入信号\n\n'
+        # 统计信号
+        buy_signals = [r for r in results if r.get('final_signal') == 'BUY']
+        sell_signals = [r for r in results if r.get('final_signal') == 'SELL']
+        hold_signals = [r for r in results if r.get('final_signal') == 'HOLD']
         
-        # 卖出信号
+        content += '- **BUY信号数量**: ' + str(len(buy_signals)) + '\n'
+        content += '- **SELL信号数量**: ' + str(len(sell_signals)) + '\n'
+        content += '- **HOLD信号数量**: ' + str(len(hold_signals)) + '\n\n'
+        
+        # 买入信号详情
+        content += '## ✅ 买入信号\n\n'
+        if buy_signals:
+            for item in buy_signals:
+                content += '### ' + item['name'] + ' (' + item['code'] + ')\n\n'
+                content += '- **信号**: ' + str(item.get('final_signal', 'N/A')) + '\n'
+                content += '- **置信度**: ' + str(item.get('final_confidence', 0)) + '%\n'
+                content += '- **多因子评分**: ' + str(item.get('factor_score', 0)) + '\n'
+                content += '- **ML概率**: ' + str(item.get('ml_probability', 0)) + '\n\n'
+        else:
+            content += '无买入信号\n\n'
+        
+        # 卖出信号详情
         content += '## ⚠️ 卖出信号\n\n'
+        if sell_signals:
+            for item in sell_signals:
+                content += '### ' + item['name'] + ' (' + item['code'] + ')\n\n'
+                content += '- **信号**: ' + str(item.get('final_signal', 'N/A')) + '\n'
+                content += '- **置信度**: ' + str(item.get('final_confidence', 0)) + '%\n'
+                content += '- **多因子评分**: ' + str(item.get('factor_score', 0)) + '\n'
+                content += '- **ML概率**: ' + str(item.get('ml_probability', 0)) + '\n\n'
+        else:
+            content += '无卖出信号\n\n'
         
         # 仓位建议
         content += '## 💰 仓位建议\n\n'
+        content += '- **建议总仓位**: ' + str(len(buy_signals) * 20) + '% (每BUY信号建议20%)\n\n'
+        
+        for item in buy_signals:
+            content += '- ' + item['name'] + ': **' + str(20) + '%**\n'
+        
+        content += '\n'
         
         # 详细分析
         content += '## 📈 详细分析\n\n'
         
         for item in results:
             content += '### ' + item['name'] + ' (' + item['code'] + ')\n\n'
-            content += '- **分析结果**: 待显示\n\n'
+            content += '- **最终信号**: ' + str(item.get('final_signal', 'N/A')) + '\n'
+            content += '- **置信度**: ' + str(item.get('final_confidence', 0)) + '%\n'
+            content += '- **多因子评分**: ' + str(item.get('factor_score', 0)) + '\n'
+            content += '- **ML概率**: ' + str(item.get('ml_probability', 0)) + '\n'
+            if 'error' in item:
+                content += '- **错误**: ' + str(item['error']) + '\n'
+            content += '\n'
         
         content += '---\n\n'
         content += '*本报告由A股投资顾问系统自动生成*\n'

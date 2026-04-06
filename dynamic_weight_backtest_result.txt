@@ -1,22 +1,170 @@
 [I 2026-04-02 11:20:04,995] A new study created in memory with name: no-name-effcc120-fe56-4872-9122-2687b3ae74dc
 ================================================================================
-¶¯Ì¬È¨ÖØµ÷ÕûÓÅ»¯ - ÍêÕû»Ø²â
+ï¿½ï¿½Ì¬È¨ï¿½Øµï¿½ï¿½ï¿½ï¿½Å»ï¿½ - ï¿½ï¿½ï¿½ï¿½ï¿½Ø²ï¿½
 ================================================================================
 
 ================================================================================
-»Ø²âÖ¸Êý: ¿Æ´´50 (000688.SH)
+ï¿½Ø²ï¿½Ö¸ï¿½ï¿½: ï¿½Æ´ï¿½50 (000688.SH)
 ================================================================================
-ÕýÔÚ¼ÆËã ¿Æ´´50 µÄ½»²æÐÅºÅ...
-ÕýÔÚ¼ÆËã ¿Æ´´50 µÄÀúÊ·°Ù·ÖÎ»...
-ÕýÔÚ¼ÆËã ¿Æ´´50 µÄ¶àÒò×ÓÆÀ·Ö...
-ÕýÔÚÉú³É ¿Æ´´50 µÄ×îÖÕÐÅºÅ...
-[OK] Êý¾ÝÐÐÊý: 766
+ï¿½ï¿½ï¿½Ú¼ï¿½ï¿½ï¿½ ï¿½Æ´ï¿½50 ï¿½Ä½ï¿½ï¿½ï¿½ï¿½Åºï¿½...
+ï¿½ï¿½ï¿½Ú¼ï¿½ï¿½ï¿½ ï¿½Æ´ï¿½50 ï¿½ï¿½ï¿½ï¿½Ê·ï¿½Ù·ï¿½Î»...
+ï¿½ï¿½ï¿½Ú¼ï¿½ï¿½ï¿½ ï¿½Æ´ï¿½50 ï¿½Ä¶ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½...
+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ï¿½Æ´ï¿½50 ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Åºï¿½...
+[OK] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½: 766
 
-²½Öè1: Ê¹ÓÃÄ¬ÈÏÈ¨ÖØ¼ÆËã...
+ï¿½ï¿½ï¿½ï¿½1: Ê¹ï¿½ï¿½Ä¬ï¿½ï¿½È¨ï¿½Ø¼ï¿½ï¿½ï¿½...
 
-²½Öè2: ÓÅ»¯¶àÒò×ÓÈ¨ÖØ...
-ÕýÔÚÓÅ»¯¶àÒò×ÓÈ¨ÖØ...
-  0%|          | 0/50 [00:00<?, ?it/s]                                        0%|          | 0/50 [00:07<?, ?it/s]Best trial: 0. Best value: 0.78:   0%|          | 0/50 [00:07<?, ?it/s]Best trial: 0. Best value: 0.78:   2%|¨‡         | 1/50 [00:07<06:24,  7.85s/it]                                                                               Best trial: 0. Best value: 0.78:   2%|¨‡         | 1/50 [00:15<06:24,  7.85s/it]Best trial: 0. Best value: 0.78:   2%|¨‡         | 1/50 [00:15<06:24,  7.85s/it]Best trial: 0. Best value: 0.78:   4%|¨…         | 2/50 [00:15<06:18,  7.88s/it]                                                                               Best trial: 0. Best value: 0.78:   4%|¨…         | 2/50 [00:23<06:18,  7.88s/it]Best trial: 0. Best value: 0.78:   4%|¨…         | 2/50 [00:23<06:18,  7.88s/it]Best trial: 0. Best value: 0.78:   6%|¨„         | 3/50 [00:23<06:07,  7.83s/it]                                                                               Best trial: 0. Best value: 0.78:   6%|¨„         | 3/50 [00:31<06:07,  7.83s/it]Best trial: 0. Best value: 0.78:   6%|¨„         | 3/50 [00:31<06:07,  7.83s/it]Best trial: 0. Best value: 0.78:   8%|¨‚         | 4/50 [00:31<05:59,  7.81s/it]                                                                               Best trial: 0. Best value: 0.78:   8%|¨‚         | 4/50 [00:39<05:59,  7.81s/it]Best trial: 0. Best value: 0.78:   8%|¨‚         | 4/50 [00:39<05:59,  7.81s/it]Best trial: 0. Best value: 0.78:  10%|¨€         | 5/50 [00:39<05:50,  7.80s/it]                                                                               Best trial: 0. Best value: 0.78:  10%|¨€         | 5/50 [00:46<05:50,  7.80s/it]Best trial: 0. Best value: 0.78:  10%|¨€         | 5/50 [00:46<05:50,  7.80s/it]Best trial: 0. Best value: 0.78:  12%|¨€¨‡        | 6/50 [00:46<05:43,  7.82s/it]                                                                               Best trial: 0. Best value: 0.78:  12%|¨€¨‡        | 6/50 [00:54<05:43,  7.82s/it]Best trial: 0. Best value: 0.78:  12%|¨€¨‡        | 6/50 [00:54<05:43,  7.82s/it]Best trial: 0. Best value: 0.78:  14%|¨€¨…        | 7/50 [00:54<05:36,  7.82s/it]                                                                               Best trial: 0. Best value: 0.78:  14%|¨€¨…        | 7/50 [01:02<05:36,  7.82s/it]Best trial: 0. Best value: 0.78:  14%|¨€¨…        | 7/50 [01:02<05:36,  7.82s/it]Best trial: 0. Best value: 0.78:  16%|¨€¨„        | 8/50 [01:02<05:28,  7.83s/it]                                                                               Best trial: 0. Best value: 0.78:  16%|¨€¨„        | 8/50 [01:10<05:28,  7.83s/it]Best trial: 0. Best value: 0.78:  16%|¨€¨„        | 8/50 [01:10<05:28,  7.83s/it]Best trial: 0. Best value: 0.78:  18%|¨€¨‚        | 9/50 [01:10<05:20,  7.82s/it]                                                                               Best trial: 0. Best value: 0.78:  18%|¨€¨‚        | 9/50 [01:18<05:20,  7.82s/it]Best trial: 0. Best value: 0.78:  18%|¨€¨‚        | 9/50 [01:18<05:20,  7.82s/it]Best trial: 0. Best value: 0.78:  20%|¨€¨€        | 10/50 [01:18<05:12,  7.81s/it]                                                                                Best trial: 0. Best value: 0.78:  20%|¨€¨€        | 10/50 [01:25<05:12,  7.81s/it]Best trial: 0. Best value: 0.78:  20%|¨€¨€        | 10/50 [01:25<05:12,  7.81s/it]Best trial: 0. Best value: 0.78:  22%|¨€¨€¨‡       | 11/50 [01:25<05:03,  7.78s/it]                                                                                Best trial: 0. Best value: 0.78:  22%|¨€¨€¨‡       | 11/50 [01:33<05:03,  7.78s/it]Best trial: 0. Best value: 0.78:  22%|¨€¨€¨‡       | 11/50 [01:33<05:03,  7.78s/it]Best trial: 0. Best value: 0.78:  24%|¨€¨€¨…       | 12/50 [01:33<04:55,  7.78s/it]                                                                                Best trial: 0. Best value: 0.78:  24%|¨€¨€¨…       | 12/50 [01:41<04:55,  7.78s/it]Best trial: 0. Best value: 0.78:  24%|¨€¨€¨…       | 12/50 [01:41<04:55,  7.78s/it]Best trial: 0. Best value: 0.78:  26%|¨€¨€¨„       | 13/50 [01:41<04:48,  7.79s/it]                                                                                Best trial: 0. Best value: 0.78:  26%|¨€¨€¨„       | 13/50 [01:49<04:48,  7.79s/it]Best trial: 0. Best value: 0.78:  26%|¨€¨€¨„       | 13/50 [01:49<04:48,  7.79s/it]Best trial: 0. Best value: 0.78:  28%|¨€¨€¨‚       | 14/50 [01:49<04:44,  7.89s/it]                                                                                Best trial: 0. Best value: 0.78:  28%|¨€¨€¨‚       | 14/50 [01:57<04:44,  7.89s/it]Best trial: 0. Best value: 0.78:  28%|¨€¨€¨‚       | 14/50 [01:57<04:44,  7.89s/it]Best trial: 0. Best value: 0.78:  30%|¨€¨€¨€       | 15/50 [01:57<04:37,  7.93s/it]                                                                                Best trial: 0. Best value: 0.78:  30%|¨€¨€¨€       | 15/50 [02:06<04:37,  7.93s/it]Best trial: 0. Best value: 0.78:  30%|¨€¨€¨€       | 15/50 [02:06<04:37,  7.93s/it]Best trial: 0. Best value: 0.78:  32%|¨€¨€¨€¨‡      | 16/50 [02:06<04:37,  8.17s/it]                                                                                Best trial: 0. Best value: 0.78:  32%|¨€¨€¨€¨‡      | 16/50 [02:14<04:37,  8.17s/it]Best trial: 0. Best value: 0.78:  32%|¨€¨€¨€¨‡      | 16/50 [02:14<04:37,  8.17s/it]Best trial: 0. Best value: 0.78:  34%|¨€¨€¨€¨…      | 17/50 [02:14<04:26,  8.09s/it]                                                                                Best trial: 0. Best value: 0.78:  34%|¨€¨€¨€¨…      | 17/50 [02:22<04:26,  8.09s/it]Best trial: 0. Best value: 0.78:  34%|¨€¨€¨€¨…      | 17/50 [02:22<04:26,  8.09s/it]Best trial: 0. Best value: 0.78:  36%|¨€¨€¨€¨„      | 18/50 [02:22<04:16,  8.03s/it]                                                                                Best trial: 0. Best value: 0.78:  36%|¨€¨€¨€¨„      | 18/50 [02:30<04:16,  8.03s/it]Best trial: 0. Best value: 0.78:  36%|¨€¨€¨€¨„      | 18/50 [02:30<04:16,  8.03s/it]Best trial: 0. Best value: 0.78:  38%|¨€¨€¨€¨‚      | 19/50 [02:30<04:10,  8.10s/it]                                                                                Best trial: 0. Best value: 0.78:  38%|¨€¨€¨€¨‚      | 19/50 [02:39<04:10,  8.10s/it]Best trial: 0. Best value: 0.78:  38%|¨€¨€¨€¨‚      | 19/50 [02:39<04:10,  8.10s/it]Best trial: 0. Best value: 0.78:  40%|¨€¨€¨€¨€      | 20/50 [02:39<04:07,  8.25s/it]                                                                                Best trial: 0. Best value: 0.78:  40%|¨€¨€¨€¨€      | 20/50 [02:47<04:07,  8.25s/it]Best trial: 0. Best value: 0.78:  40%|¨€¨€¨€¨€      | 20/50 [02:47<04:07,  8.25s/it]Best trial: 0. Best value: 0.78:  42%|¨€¨€¨€¨€¨‡     | 21/50 [02:47<03:59,  8.26s/it]                                                                                Best trial: 0. Best value: 0.78:  42%|¨€¨€¨€¨€¨‡     | 21/50 [02:55<03:59,  8.26s/it]Best trial: 0. Best value: 0.78:  42%|¨€¨€¨€¨€¨‡     | 21/50 [02:55<03:59,  8.26s/it]Best trial: 0. Best value: 0.78:  44%|¨€¨€¨€¨€¨…     | 22/50 [02:55<03:47,  8.11s/it]                                                                                Best trial: 0. Best value: 0.78:  44%|¨€¨€¨€¨€¨…     | 22/50 [03:03<03:47,  8.11s/it]Best trial: 0. Best value: 0.78:  44%|¨€¨€¨€¨€¨…     | 22/50 [03:03<03:47,  8.11s/it]Best trial: 0. Best value: 0.78:  46%|¨€¨€¨€¨€¨„     | 23/50 [03:03<03:37,  8.07s/it]                                                                                Best trial: 0. Best value: 0.78:  46%|¨€¨€¨€¨€¨„     | 23/50 [03:10<03:37,  8.07s/it]Best trial: 0. Best value: 0.78:  46%|¨€¨€¨€¨€¨„     | 23/50 [03:10<03:37,  8.07s/it]Best trial: 0. Best value: 0.78:  48%|¨€¨€¨€¨€¨‚     | 24/50 [03:10<03:28,  8.03s/it]                                                                                Best trial: 0. Best value: 0.78:  48%|¨€¨€¨€¨€¨‚     | 24/50 [03:18<03:28,  8.03s/it]Best trial: 0. Best value: 0.78:  48%|¨€¨€¨€¨€¨‚     | 24/50 [03:18<03:28,  8.03s/it]Best trial: 0. Best value: 0.78:  50%|¨€¨€¨€¨€¨€     | 25/50 [03:18<03:18,  7.95s/it]                                                                                Best trial: 0. Best value: 0.78:  50%|¨€¨€¨€¨€¨€     | 25/50 [03:26<03:18,  7.95s/it]Best trial: 0. Best value: 0.78:  50%|¨€¨€¨€¨€¨€     | 25/50 [03:26<03:18,  7.95s/it]Best trial: 0. Best value: 0.78:  52%|¨€¨€¨€¨€¨€¨‡    | 26/50 [03:26<03:09,  7.90s/it]                                                                                Best trial: 0. Best value: 0.78:  52%|¨€¨€¨€¨€¨€¨‡    | 26/50 [03:34<03:09,  7.90s/it]Best trial: 0. Best value: 0.78:  52%|¨€¨€¨€¨€¨€¨‡    | 26/50 [03:34<03:09,  7.90s/it]Best trial: 0. Best value: 0.78:  54%|¨€¨€¨€¨€¨€¨…    | 27/50 [03:34<03:00,  7.87s/it]                                                                                Best trial: 0. Best value: 0.78:  54%|¨€¨€¨€¨€¨€¨…    | 27/50 [03:42<03:00,  7.87s/it]Best trial: 0. Best value: 0.78:  54%|¨€¨€¨€¨€¨€¨…    | 27/50 [03:42<03:00,  7.87s/it]Best trial: 0. Best value: 0.78:  56%|¨€¨€¨€¨€¨€¨„    | 28/50 [03:42<02:52,  7.86s/it]                                                                                Best trial: 0. Best value: 0.78:  56%|¨€¨€¨€¨€¨€¨„    | 28/50 [03:49<02:52,  7.86s/it]Best trial: 0. Best value: 0.78:  56%|¨€¨€¨€¨€¨€¨„    | 28/50 [03:49<02:52,  7.86s/it]Best trial: 0. Best value: 0.78:  58%|¨€¨€¨€¨€¨€¨‚    | 29/50 [03:49<02:44,  7.83s/it]                                                                                [I 2026-04-02 11:20:12,861] Trial 0 finished with value: 0.78 and parameters: {'trend': 0.3010697803257556, 'momentum': 0.37452037468532007, 'volume': 0.16392859356146933, 'valuation': 0.24379468821769698, 'volatility': 0.1949833582170427}. Best is trial 0 with value: 0.78.
+ï¿½ï¿½ï¿½ï¿½2: ï¿½Å»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¨ï¿½ï¿½...
+ï¿½ï¿½ï¿½ï¿½ï¿½Å»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¨ï¿½ï¿½...
+
+  0%|          | 0/50 [00:00<?, ?it/s]
+                                      
+
+  0%|          | 0/50 [00:07<?, ?it/s]
+Best trial: 0. Best value: 0.78:   0%|          | 0/50 [00:07<?, ?it/s]
+Best trial: 0. Best value: 0.78:   2%|ï¿½ï¿½         | 1/50 [00:07<06:24,  7.85s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:   2%|ï¿½ï¿½         | 1/50 [00:15<06:24,  7.85s/it]
+Best trial: 0. Best value: 0.78:   2%|ï¿½ï¿½         | 1/50 [00:15<06:24,  7.85s/it]
+Best trial: 0. Best value: 0.78:   4%|ï¿½ï¿½         | 2/50 [00:15<06:18,  7.88s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:   4%|ï¿½ï¿½         | 2/50 [00:23<06:18,  7.88s/it]
+Best trial: 0. Best value: 0.78:   4%|ï¿½ï¿½         | 2/50 [00:23<06:18,  7.88s/it]
+Best trial: 0. Best value: 0.78:   6%|ï¿½ï¿½         | 3/50 [00:23<06:07,  7.83s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:   6%|ï¿½ï¿½         | 3/50 [00:31<06:07,  7.83s/it]
+Best trial: 0. Best value: 0.78:   6%|ï¿½ï¿½         | 3/50 [00:31<06:07,  7.83s/it]
+Best trial: 0. Best value: 0.78:   8%|ï¿½ï¿½         | 4/50 [00:31<05:59,  7.81s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:   8%|ï¿½ï¿½         | 4/50 [00:39<05:59,  7.81s/it]
+Best trial: 0. Best value: 0.78:   8%|ï¿½ï¿½         | 4/50 [00:39<05:59,  7.81s/it]
+Best trial: 0. Best value: 0.78:  10%|ï¿½ï¿½         | 5/50 [00:39<05:50,  7.80s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:  10%|ï¿½ï¿½         | 5/50 [00:46<05:50,  7.80s/it]
+Best trial: 0. Best value: 0.78:  10%|ï¿½ï¿½         | 5/50 [00:46<05:50,  7.80s/it]
+Best trial: 0. Best value: 0.78:  12%|ï¿½ï¿½ï¿½ï¿½        | 6/50 [00:46<05:43,  7.82s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:  12%|ï¿½ï¿½ï¿½ï¿½        | 6/50 [00:54<05:43,  7.82s/it]
+Best trial: 0. Best value: 0.78:  12%|ï¿½ï¿½ï¿½ï¿½        | 6/50 [00:54<05:43,  7.82s/it]
+Best trial: 0. Best value: 0.78:  14%|ï¿½ï¿½ï¿½ï¿½        | 7/50 [00:54<05:36,  7.82s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:  14%|ï¿½ï¿½ï¿½ï¿½        | 7/50 [01:02<05:36,  7.82s/it]
+Best trial: 0. Best value: 0.78:  14%|ï¿½ï¿½ï¿½ï¿½        | 7/50 [01:02<05:36,  7.82s/it]
+Best trial: 0. Best value: 0.78:  16%|ï¿½ï¿½ï¿½ï¿½        | 8/50 [01:02<05:28,  7.83s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:  16%|ï¿½ï¿½ï¿½ï¿½        | 8/50 [01:10<05:28,  7.83s/it]
+Best trial: 0. Best value: 0.78:  16%|ï¿½ï¿½ï¿½ï¿½        | 8/50 [01:10<05:28,  7.83s/it]
+Best trial: 0. Best value: 0.78:  18%|ï¿½ï¿½ï¿½ï¿½        | 9/50 [01:10<05:20,  7.82s/it]
+                                                                               
+
+Best trial: 0. Best value: 0.78:  18%|ï¿½ï¿½ï¿½ï¿½        | 9/50 [01:18<05:20,  7.82s/it]
+Best trial: 0. Best value: 0.78:  18%|ï¿½ï¿½ï¿½ï¿½        | 9/50 [01:18<05:20,  7.82s/it]
+Best trial: 0. Best value: 0.78:  20%|ï¿½ï¿½ï¿½ï¿½        | 10/50 [01:18<05:12,  7.81s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  20%|ï¿½ï¿½ï¿½ï¿½        | 10/50 [01:25<05:12,  7.81s/it]
+Best trial: 0. Best value: 0.78:  20%|ï¿½ï¿½ï¿½ï¿½        | 10/50 [01:25<05:12,  7.81s/it]
+Best trial: 0. Best value: 0.78:  22%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 11/50 [01:25<05:03,  7.78s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  22%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 11/50 [01:33<05:03,  7.78s/it]
+Best trial: 0. Best value: 0.78:  22%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 11/50 [01:33<05:03,  7.78s/it]
+Best trial: 0. Best value: 0.78:  24%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 12/50 [01:33<04:55,  7.78s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  24%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 12/50 [01:41<04:55,  7.78s/it]
+Best trial: 0. Best value: 0.78:  24%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 12/50 [01:41<04:55,  7.78s/it]
+Best trial: 0. Best value: 0.78:  26%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 13/50 [01:41<04:48,  7.79s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  26%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 13/50 [01:49<04:48,  7.79s/it]
+Best trial: 0. Best value: 0.78:  26%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 13/50 [01:49<04:48,  7.79s/it]
+Best trial: 0. Best value: 0.78:  28%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 14/50 [01:49<04:44,  7.89s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  28%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 14/50 [01:57<04:44,  7.89s/it]
+Best trial: 0. Best value: 0.78:  28%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 14/50 [01:57<04:44,  7.89s/it]
+Best trial: 0. Best value: 0.78:  30%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 15/50 [01:57<04:37,  7.93s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  30%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 15/50 [02:06<04:37,  7.93s/it]
+Best trial: 0. Best value: 0.78:  30%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½       | 15/50 [02:06<04:37,  7.93s/it]
+Best trial: 0. Best value: 0.78:  32%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 16/50 [02:06<04:37,  8.17s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  32%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 16/50 [02:14<04:37,  8.17s/it]
+Best trial: 0. Best value: 0.78:  32%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 16/50 [02:14<04:37,  8.17s/it]
+Best trial: 0. Best value: 0.78:  34%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 17/50 [02:14<04:26,  8.09s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  34%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 17/50 [02:22<04:26,  8.09s/it]
+Best trial: 0. Best value: 0.78:  34%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 17/50 [02:22<04:26,  8.09s/it]
+Best trial: 0. Best value: 0.78:  36%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 18/50 [02:22<04:16,  8.03s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  36%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 18/50 [02:30<04:16,  8.03s/it]
+Best trial: 0. Best value: 0.78:  36%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 18/50 [02:30<04:16,  8.03s/it]
+Best trial: 0. Best value: 0.78:  38%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 19/50 [02:30<04:10,  8.10s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  38%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 19/50 [02:39<04:10,  8.10s/it]
+Best trial: 0. Best value: 0.78:  38%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 19/50 [02:39<04:10,  8.10s/it]
+Best trial: 0. Best value: 0.78:  40%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 20/50 [02:39<04:07,  8.25s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  40%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 20/50 [02:47<04:07,  8.25s/it]
+Best trial: 0. Best value: 0.78:  40%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½      | 20/50 [02:47<04:07,  8.25s/it]
+Best trial: 0. Best value: 0.78:  42%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 21/50 [02:47<03:59,  8.26s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  42%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 21/50 [02:55<03:59,  8.26s/it]
+Best trial: 0. Best value: 0.78:  42%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 21/50 [02:55<03:59,  8.26s/it]
+Best trial: 0. Best value: 0.78:  44%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 22/50 [02:55<03:47,  8.11s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  44%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 22/50 [03:03<03:47,  8.11s/it]
+Best trial: 0. Best value: 0.78:  44%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 22/50 [03:03<03:47,  8.11s/it]
+Best trial: 0. Best value: 0.78:  46%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 23/50 [03:03<03:37,  8.07s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  46%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 23/50 [03:10<03:37,  8.07s/it]
+Best trial: 0. Best value: 0.78:  46%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 23/50 [03:10<03:37,  8.07s/it]
+Best trial: 0. Best value: 0.78:  48%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 24/50 [03:10<03:28,  8.03s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  48%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 24/50 [03:18<03:28,  8.03s/it]
+Best trial: 0. Best value: 0.78:  48%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 24/50 [03:18<03:28,  8.03s/it]
+Best trial: 0. Best value: 0.78:  50%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 25/50 [03:18<03:18,  7.95s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  50%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 25/50 [03:26<03:18,  7.95s/it]
+Best trial: 0. Best value: 0.78:  50%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½     | 25/50 [03:26<03:18,  7.95s/it]
+Best trial: 0. Best value: 0.78:  52%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 26/50 [03:26<03:09,  7.90s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  52%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 26/50 [03:34<03:09,  7.90s/it]
+Best trial: 0. Best value: 0.78:  52%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 26/50 [03:34<03:09,  7.90s/it]
+Best trial: 0. Best value: 0.78:  54%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 27/50 [03:34<03:00,  7.87s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  54%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 27/50 [03:42<03:00,  7.87s/it]
+Best trial: 0. Best value: 0.78:  54%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 27/50 [03:42<03:00,  7.87s/it]
+Best trial: 0. Best value: 0.78:  56%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 28/50 [03:42<02:52,  7.86s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  56%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 28/50 [03:49<02:52,  7.86s/it]
+Best trial: 0. Best value: 0.78:  56%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 28/50 [03:49<02:52,  7.86s/it]
+Best trial: 0. Best value: 0.78:  58%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 29/50 [03:49<02:44,  7.83s/it]
+                                                                                
+[I 2026-04-02 11:20:12,861] Trial 0 finished with value: 0.78 and parameters: {'trend': 0.3010697803257556, 'momentum': 0.37452037468532007, 'volume': 0.16392859356146933, 'valuation': 0.24379468821769698, 'volatility': 0.1949833582170427}. Best is trial 0 with value: 0.78.
 [I 2026-04-02 11:20:20,756] Trial 1 finished with value: 0.78 and parameters: {'trend': 0.182059513705642, 'momentum': 0.2495667118194252, 'volume': 0.2488555464766526, 'valuation': 0.24944319761563344, 'volatility': 0.08022013058791}. Best is trial 0 with value: 0.78.
 [I 2026-04-02 11:20:28,526] Trial 2 finished with value: 0.78 and parameters: {'trend': 0.3445395222456525, 'momentum': 0.28403627832045886, 'volume': 0.21203991661255056, 'valuation': 0.19863630697819662, 'volatility': 0.08727625147430162}. Best is trial 0 with value: 0.78.
 [I 2026-04-02 11:20:36,302] Trial 3 finished with value: 0.78 and parameters: {'trend': 0.15994397626855358, 'momentum': 0.2643432976201776, 'volume': 0.2045430616739019, 'valuation': 0.3055540244899729, 'volatility': 0.11618469891784668}. Best is trial 0 with value: 0.78.
@@ -45,4 +193,32 @@
 [I 2026-04-02 11:23:39,329] Trial 26 finished with value: 0.78 and parameters: {'trend': 0.2894251538447688, 'momentum': 0.2987036199115759, 'volume': 0.19623697370421092, 'valuation': 0.19747319721012338, 'volatility': 0.0909316248114323}. Best is trial 0 with value: 0.78.
 [I 2026-04-02 11:23:47,182] Trial 27 finished with value: 0.78 and parameters: {'trend': 0.32371997116714857, 'momentum': 0.3754599801794613, 'volume': 0.22110799649013008, 'valuation': 0.2721661803070248, 'volatility': 0.15463550367678938}. Best is trial 0 with value: 0.78.
 [I 2026-04-02 11:23:54,949] Trial 28 finished with value: 0.78 and parameters: {'trend': 0.3463473333538236, 'momentum': 0.2658280203736222, 'volume': 0.23590422517719856, 'valuation': 0.1370654473172538, 'volatility': 0.09427682327052252}. Best is trial 0 with value: 0.78.
-[I 2026-04-02 11:24:02,868] Trial 29 finished with value: 0.78 and parameters: {'trend': 0.18903915366352617, 'momentum': 0.2611108352182657, 'volume': 0.2489555349087408, 'valuation': 0.3148268915328353, 'volatility': 0.12520836119951406}. Best is trial 0 with value: 0.78.Best trial: 0. Best value: 0.78:  58%|¨€¨€¨€¨€¨€¨‚    | 29/50 [03:57<02:44,  7.83s/it]Best trial: 0. Best value: 0.78:  58%|¨€¨€¨€¨€¨€¨‚    | 29/50 [03:57<02:44,  7.83s/it]Best trial: 0. Best value: 0.78:  60%|¨€¨€¨€¨€¨€¨€    | 30/50 [03:57<02:37,  7.86s/it]                                                                                Best trial: 0. Best value: 0.78:  60%|¨€¨€¨€¨€¨€¨€    | 30/50 [04:06<02:37,  7.86s/it]Best trial: 0. Best value: 0.78:  60%|¨€¨€¨€¨€¨€¨€    | 30/50 [04:06<02:37,  7.86s/it]Best trial: 0. Best value: 0.78:  62%|¨€¨€¨€¨€¨€¨€¨‡   | 31/50 [04:06<02:32,  8.02s/it]                                                                                Best trial: 0. Best value: 0.78:  62%|¨€¨€¨€¨€¨€¨€¨‡   | 31/50 [04:14<02:32,  8.02s/it]Best trial: 0. Best value: 0.78:  62%|¨€¨€¨€¨€¨€¨€¨‡   | 31/50 [04:14<02:32,  8.02s/it]Best trial: 0. Best value: 0.78:  64%|¨€¨€¨€¨€¨€¨€¨…   | 32/50 [04:14<02:26,  8.11s/it]                                                                                Best trial: 0. Best value: 0.78:  64%|¨€¨€¨€¨€¨€¨€¨…   | 32/50 [04:22<02:26,  8.11s/it]Best trial: 0. Best value: 0.78:  64%|¨€¨€¨€¨€¨€¨€¨…   | 32/50 [04:22<02:26,  8.11s/it]Best trial: 0. Best value: 0.78:  66%|¨€¨€¨€¨€¨€¨€¨„   | 33/50 [04:22<02:16,  8.01s/it]                                                                                Best trial: 0. Best value: 0.78:  66%|¨€¨€¨€¨€¨€¨€¨„   | 33/50 [04:30<02:16,  8.01s/it]Best trial: 0. Best value: 0.78:  66%|¨€¨€¨€¨€¨€¨€¨„   | 33/50 [04:30<02:16,  8.01s/it]Best trial: 0. Best value: 0.78:  68%|¨€¨€¨€¨€¨€¨€¨‚   | 34/50 [04:30<02:08,  8.06s/it]                                                                                Best trial: 0. Best value: 0.78:  68%|¨€¨€¨€¨€¨€¨€¨‚   | 34/50 [04:38<02:08,  8.06s/it]Best trial: 0. Best value: 0.78:  68%|¨€¨€¨€¨€¨€¨€¨‚   | 34/50 [04:38<02:08,  8.06s/it]Best trial: 0. Best value: 0.78:  70%|¨€¨€¨€¨€¨€¨€¨€   | 35/50 [04:38<01:59,  7.95s/it]
+[I 2026-04-02 11:24:02,868] Trial 29 finished with value: 0.78 and parameters: {'trend': 0.18903915366352617, 'momentum': 0.2611108352182657, 'volume': 0.2489555349087408, 'valuation': 0.3148268915328353, 'volatility': 0.12520836119951406}. Best is trial 0 with value: 0.78.
+Best trial: 0. Best value: 0.78:  58%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 29/50 [03:57<02:44,  7.83s/it]
+Best trial: 0. Best value: 0.78:  58%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 29/50 [03:57<02:44,  7.83s/it]
+Best trial: 0. Best value: 0.78:  60%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 30/50 [03:57<02:37,  7.86s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  60%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 30/50 [04:06<02:37,  7.86s/it]
+Best trial: 0. Best value: 0.78:  60%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½    | 30/50 [04:06<02:37,  7.86s/it]
+Best trial: 0. Best value: 0.78:  62%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 31/50 [04:06<02:32,  8.02s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  62%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 31/50 [04:14<02:32,  8.02s/it]
+Best trial: 0. Best value: 0.78:  62%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 31/50 [04:14<02:32,  8.02s/it]
+Best trial: 0. Best value: 0.78:  64%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 32/50 [04:14<02:26,  8.11s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  64%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 32/50 [04:22<02:26,  8.11s/it]
+Best trial: 0. Best value: 0.78:  64%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 32/50 [04:22<02:26,  8.11s/it]
+Best trial: 0. Best value: 0.78:  66%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 33/50 [04:22<02:16,  8.01s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  66%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 33/50 [04:30<02:16,  8.01s/it]
+Best trial: 0. Best value: 0.78:  66%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 33/50 [04:30<02:16,  8.01s/it]
+Best trial: 0. Best value: 0.78:  68%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 34/50 [04:30<02:08,  8.06s/it]
+                                                                                
+
+Best trial: 0. Best value: 0.78:  68%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 34/50 [04:38<02:08,  8.06s/it]
+Best trial: 0. Best value: 0.78:  68%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 34/50 [04:38<02:08,  8.06s/it]
+Best trial: 0. Best value: 0.78:  70%|ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   | 35/50 [04:38<01:59,  7.95s/it]

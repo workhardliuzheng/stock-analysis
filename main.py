@@ -1,12 +1,13 @@
 """
-股票分析系统 - 统一入口
+股票分析系统 - 统一入口 (整合版)
 
-支持五种运行模式：
-1. sync     - 数据同步（同步指数、股票、财务等数据）
-2. plot     - 图表生成（生成技术分析图表）
-3. signal   - 信号生成（生成指数ETF买卖信号）
-4. backtest - 策略回测（回测多因子/ML/混合策略）
-5. guide    - 使用指南（显示每日操作流程）
+支持六种运行模式：
+1. sync         - 数据同步（同步指数、股票、财务等数据）
+2. plot         - 图表生成（生成技术分析图表）
+3. signal       - 信号生成（生成指数ETF买卖信号）
+4. backtest     - 策略回测（回测多因子/ML/混合策略）
+5. daily_report - 全天流程（同步+分析+报表+推送）
+6. guide        - 使用指南（显示每日操作流程）
 
 使用示例：
     python main.py sync                              # 同步所有数据
@@ -17,11 +18,17 @@
     python main.py signal --ts-code 000300.SH        # 生成沪深300今日信号
     python main.py backtest                          # 回测所有指数所有策略
     python main.py backtest --ts-code 000300.SH      # 回测沪深300
-    python main.py backtest --strategy factor         # 仅回测多因子策略
-    python main.py backtest --execution-timing open   # 使用T+1开盘价执行
-    python main.py guide                             # 显示使用指南
+    python main.py daily_report                      # 全天流程：同步+分析+报表+邮件推送
+    python main.py daily_report --to-email user@example.com  # 指定收件人
+    python main.py guide                             # 显示每日操作流程
 """
 import argparse
+import os
+from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import Header
 
 
 def print_guide():
@@ -49,7 +56,17 @@ def print_guide():
      - SELL 信号 -> 次日(T+1)开盘时 卖出 持有的ETF
      - HOLD 信号 -> 不操作，维持当前仓位
 
-二、回测验证
+二、一键全天流程（推荐）
+----------------
+
+  自动完成：数据同步 → 信号分析 → 报表生成 → 邮件推送
+  > python main.py daily_report
+  
+  指定收件人：
+  > python main.py daily_report --to-email user@example.com
+  > python main.py daily_report --to-email user1@example.com,user2@example.com
+
+三、回测验证
 ------------
 
   基本回测 (含手续费，收盘价执行):
@@ -64,7 +81,7 @@ def print_guide():
   单指数回测:
   > python main.py backtest --ts-code 000300.SH --execution-timing open
 
-三、执行时机说明
+四、执行时机说明
 ----------------
 
   本系统使用 T日收盘数据 生成信号，信号在 T+1日 执行：
@@ -78,7 +95,7 @@ def print_guide():
       - 假设在次日收盘前完成操作
       - 回测结果可能略偏乐观
 
-四、手续费说明
+五、手续费说明
 --------------
 
   默认佣金: 万0.6 (ETF交易佣金)
@@ -86,7 +103,7 @@ def print_guide():
   - 可通过 --commission 参数调整
   - 例如: 股票万0.85 = 0.000085
 
-五、ML模型说明
+六、ML模型说明
 --------------
 
   系统支持三种模型:
@@ -98,7 +115,7 @@ def print_guide():
   信号阈值: 预测收益 > 0.1% → BUY, < -0.1% → SELL, 中间 → HOLD
   可选 --auto-tune 启用 Optuna 超参数自动调优（耗时较长）
 
-六、注意事项
+七、注意事项
 ------------
 
   - 该系统用于辅助投资决策，不构成投资建议
@@ -108,6 +125,329 @@ def print_guide():
 
 ================================================================================
 """)
+
+
+def send_email(subject, html_content, to_emails, smtp_config=None):
+    """
+    发送邮件
+    
+    Args:
+        subject: 邮件主题
+        html_content: HTML格式的邮件内容
+        to_emails: 收件人邮箱列表（字符串或列表）
+        smtp_config: SMTP配置，格式：
+            {
+                'host': 'smtp.example.com',
+                'port': 587,
+                'user': 'user@example.com',
+                'password': 'app_password',
+                'from_email': 'user@example.com'
+            }
+    """
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    # 如果没有配置，尝试从环境变量读取
+    if smtp_config is None:
+        smtp_config = {
+            'host': os.environ.get('SMTP_HOST', 'smtp.gmail.com'),
+            'port': int(os.environ.get('SMTP_PORT', '587')),
+            'user': os.environ.get('SMTP_USER', ''),
+            'password': os.environ.get('SMTP_PASSWORD', ''),
+            'from_email': os.environ.get('SMTP_FROM', os.environ.get('SMTP_USER', ''))
+        }
+    
+    # 收件人处理
+    if isinstance(to_emails, str):
+        to_emails = [email.strip() for email in to_emails.split(',')]
+    
+    # 创建邮件
+    msg = MIMEMultipart('related')
+    msg['From'] = Header(smtp_config['from_email'], 'utf-8')
+    msg['To'] = Header(','.join(to_emails), 'utf-8')
+    msg['Subject'] = Header(subject, 'utf-8')
+    
+    # 添加HTML内容
+    msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+    
+    # 如果有附件
+    report_file = r'E:\pycharm\stock-analysis\daily_report.html'
+    if os.path.exists(report_file):
+        with open(report_file, 'rb') as f:
+            att = MIMEText(f.read(), 'base64', 'utf-8')
+            att['Content-Type'] = 'application/octet-stream'
+            att['Content-Disposition'] = 'attachment; filename="daily_report.html"'
+            msg.attach(att)
+    
+    # 发送邮件
+    try:
+        server = smtplib.SMTP(smtp_config['host'], smtp_config['port'])
+        server.starttls()
+        server.login(smtp_config['user'], smtp_config['password'])
+        server.sendmail(smtp_config['from_email'], to_emails, msg.as_string())
+        server.quit()
+        return True, "邮件发送成功"
+    except Exception as e:
+        return False, f"邮件发送失败: {str(e)}"
+
+
+def generate_html_report(signals_data, indices_info=None):
+    """
+    生成HTML格式的日报
+    
+    Args:
+        signals_data: 信号数据字典，格式：{ts_code: {'signal': 'BUY/SELL/HOLD', 'confidence': 0.8, ...}}
+        indices_info: 指数信息映射
+    
+    Returns:
+        html_content: HTML格式的报告内容
+    """
+    if indices_info is None:
+        indices_info = {
+            '000688.SH': '科创50',
+            '399006.SZ': '创业板指',
+            '000001.SH': '上证综指',
+            '000905.SH': '中证500',
+            '000852.SH': '中证1000',
+            '000300.SH': '沪深300',
+            '399001.SZ': '深证成指',
+            '000016.SH': '上证50'
+        }
+    
+    # 构建表格内容
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; margin-bottom: 30px; }
+        .date { text-align: center; color: #666; margin-bottom: 30px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #4a90e2; color: white; font-weight: bold; }
+        tr:hover { background: #f5f9ff; }
+        .signal-buy { color: #e74c3c; font-weight: bold; }
+        .signal-sell { color: #27ae60; font-weight: bold; }
+        .signal-hold { color: #95a5a6; font-weight: bold; }
+        .confidence { background: #e8f4f8; padding: 2px 8px; border-radius: 3px; }
+        .summary { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .summary h3 { margin-top: 0; color: #333; }
+        .position-guide { background: #fff3cd; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ffc107; }
+        .position-guide h4 { margin-top: 0; color: #856404; }
+        .footer { text-align: center; color: #999; margin-top: 30px; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 股市每日投资报告</h1>
+        <p class="date">生成时间: """ + datetime.now().strftime('%Y年%m月%d日 %H:%M:%S') + """</p>
+        
+        <div class="summary">
+            <h3>📈 市场概览</h3>
+            <p>今日市场情绪：""" + get_market_sentiment(signals_data) + """</p>
+            <p>建议持仓比例：""" + get_recommended_position(signals_data) + """</p>
+        </div>
+        
+        <div class="position-guide">
+            <h4>仓位分配建议 💰</h4>
+            <p>""" + get_position_allocation(signals_data) + """</p>
+        </div>
+        
+        <table>
+            <thead>
+                <tr>
+                    <th>指数代码</th>
+                    <th>指数名称</th>
+                    <th>信号</th>
+                    <th>信心度</th>
+                    <th>多因子评分</th>
+                    <th>ML预测</th>
+                </tr>
+            </thead>
+            <tbody>
+    """
+    
+    # 添加每个指数的信号
+    for ts_code, data in signals_data.items():
+        name = indices_info.get(ts_code, ts_code)
+        signal = data.get('signal', 'HOLD')
+        confidence = data.get('confidence', 0)
+        factor_score = data.get('factor_score', 'N/A')
+        ml_prediction = data.get('ml_prediction', 'N/A')
+        
+        signal_class = f'signal-{signal.lower()}'
+        signal_text = signal
+        
+        if signal == 'BUY':
+            signal_display = f'<span class="{signal_class}">📈 买入</span>'
+        elif signal == 'SELL':
+            signal_display = f'<span class="{signal_class}">📉 卖出</span>'
+        else:
+            signal_display = f'<span class="{signal_class}">⏸️ 持有</span>'
+        
+        html += f"""
+                <tr>
+                    <td>{ts_code}</td>
+                    <td>{name}</td>
+                    <td>{signal_display}</td>
+                    <td><span class="confidence">{confidence:.1%}</span></td>
+                    <td>{factor_score}</td>
+                    <td>{ml_prediction}</td>
+                </tr>
+        """
+    
+    html += """
+            </tbody>
+        </table>
+        
+        <div class="footer">
+            <p>本报告由股票分析系统自动生成</p>
+            <p>数据来源: Tushare Pro | 分析模型: 多因子 + XGBoost集成</p>
+            <p>免责声明: 本报告仅供参考，不构成投资建议</p>
+        </div>
+    </div>
+</body>
+</html>
+    """
+    
+    return html
+
+
+def get_market_sentiment(signals_data):
+    """获取市场情绪"""
+    if not signals_data:
+        return "数据不足"
+    
+    buy_count = sum(1 for d in signals_data.values() if d.get('signal') == 'BUY')
+    sell_count = sum(1 for d in signals_data.values() if d.get('signal') == 'SELL')
+    hold_count = sum(1 for d in signals_data.values() if d.get('signal') == 'HOLD')
+    
+    total = len(signals_data)
+    if buy_count > total * 0.5:
+        return "📈 看涨情绪主导，建议积极建仓"
+    elif sell_count > total * 0.5:
+        return "📉 看跌情绪主导，建议减仓观望"
+    elif hold_count > total * 0.5:
+        return "⏸️ 市场观望情绪浓厚，建议保持仓位"
+    else:
+        return "📊 市场分歧明显，建议谨慎操作"
+
+
+def get_recommended_position(signals_data):
+    """获取推荐持仓比例"""
+    if not signals_data:
+        return "数据不足"
+    
+    buy_count = sum(1 for d in signals_data.values() if d.get('signal') == 'BUY')
+    sell_count = sum(1 for d in signals_data.values() if d.get('signal') == 'SELL')
+    
+    if buy_count >= 3:
+        return "80% - 90% (积极持仓)"
+    elif buy_count >= 1 and sell_count <= 1:
+        return "50% - 70% (平衡持仓)"
+    elif sell_count >= 2:
+        return "20% - 40% (谨慎持仓)"
+    else:
+        return "40% - 60% (中性持仓)"
+
+
+def get_position_allocation(signals_data):
+    """获取仓位分配建议"""
+    if not signals_data:
+        return "数据不足，无法生成仓位建议"
+    
+    allocation = []
+    for ts_code, data in signals_data.items():
+        signal = data.get('signal', 'HOLD')
+        confidence = data.get('confidence', 0)
+        
+        if signal == 'BUY':
+            if confidence >= 0.8:
+                allocation.append(f"🚀 {ts_code}: 20% (高信心买入)")
+            elif confidence >= 0.6:
+                allocation.append(f"📈 {ts_code}: 15% (中等信心买入)")
+            else:
+                allocation.append(f" bullish {ts_code}: 10% (低信心买入)")
+        elif signal == 'SELL':
+            allocation.append(f"📉 {ts_code}: 清仓> (卖出信号)")
+    
+    if allocation:
+        return '\n'.join(allocation)
+    else:
+        return "当前无明确买入信号，建议保持现金仓位 or 减仓持有"
+
+
+def run_daily_workflow(to_emails=None):
+    """
+    运行每日全流程：数据同步 → 信号分析 → 报表生成 → 邮件推送
+    """
+    import subprocess
+    import sys
+    
+    print("=" * 60)
+    print("🚀 开始每日工作流")
+    print("=" * 60)
+    
+    # 1. 数据同步
+    print("\n📝 步骤1: 同步指数数据...")
+    print("-" * 40)
+    try:
+        result = subprocess.run(
+            [sys.executable, __file__, 'sync', '--index-only'],
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+        if result.returncode == 0:
+            print("✅ 数据同步成功")
+        else:
+            print(f"⚠️ 数据同步警告: {result.stderr}")
+    except Exception as e:
+        print(f"❌ 数据同步失败: {str(e)}")
+        return
+    
+    # 2. 信号分析
+    print("\n📊 步骤2: 分析数据生成信号...")
+    print("-" * 40)
+    try:
+        from analysis.index_analyzer import signal_all_indices
+        signal_all_indices()
+        print("✅ 信号分析完成")
+    except Exception as e:
+        print(f"❌ 信号分析失败: {str(e)}")
+        return
+    
+    # 3. 生成HTML报表
+    print("\n📄 步骤3: 生成HTML报表...")
+    print("-" * 40)
+    try:
+        # 使用report_generator模块生成报表
+        import report_generator
+        _, html_content = report_generator.save_html_report()
+        print("✅ HTML报表已生成")
+    except Exception as e:
+        print(f"❌ 报表生成失败: {str(e)}")
+        return
+    
+    # 4. 发送邮件
+    if to_emails:
+        print(f"\n📧 步骤4: 发送邮件至 {to_emails}...")
+        print("-" * 40)
+        
+        # 使用email_sender模块发送邮件
+        import email_sender
+        success = email_sender.send_daily_report(to_emails)
+        
+        if not success:
+            print("⚠️ 邮件发送未成功，但不影响其他流程")
+    
+    print("\n" + "=" * 60)
+    print("✨ 每日工作流完成！")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
@@ -129,20 +469,22 @@ if __name__ == "__main__":
   python main.py backtest                          回测所有指数所有策略
   python main.py backtest --ts-code 000300.SH      回测沪深300
   python main.py backtest --strategy factor        仅回测多因子策略
-  python main.py backtest --strategy ml            仅回测ML策略
   python main.py backtest --execution-timing open  T+1开盘价执行(更真实)
   python main.py backtest --commission 0.000085    自定义佣金率
-  python main.py backtest --auto-tune              启用Optuna超参数调优
+  python main.py daily_report                      全天流程：同步+分析+报表
+  python main.py daily_report --to-email user@example.com  邮件推送
   python main.py guide                            显示每日操作指南
         """
     )
-    parser.add_argument('mode', choices=['sync', 'plot', 'signal', 'backtest', 'guide'],
-                        help='运行模式: sync/plot/signal/backtest/guide')
+    parser.add_argument('mode', 
+                        choices=['sync', 'plot', 'signal', 'backtest', 'daily_report', 'guide'],
+                        help='运行模式: sync/plot/signal/backtest/daily_report/guide')
     parser.add_argument('--start-date', default='20200101', help='同步/回测开始日期 (默认: 20200101)')
     parser.add_argument('--index-only', action='store_true', help='仅同步指数数据 (sync模式)')
     parser.add_argument('--ts-code', help='指定指数代码')
     parser.add_argument('--save-dir', help='图表保存目录 (plot模式)')
     parser.add_argument('--show', action='store_true', help='显示图表 (plot模式)')
+    parser.add_argument('--to-emails', help='收件人邮箱 (daily_report模式，逗号分隔)')
     parser.add_argument('--strategy', default='all',
                         choices=['factor', 'ml', 'combined', 'all'],
                         help='回测策略: factor/ml/combined/all (默认: all)')
@@ -187,6 +529,9 @@ if __name__ == "__main__":
             model_type=args.model_type,
             feature_selection=args.feature_selection
         )
+    
+    elif args.mode == 'daily_report':
+        run_daily_workflow(args.to_emails)
     
     elif args.mode == 'backtest':
         from analysis.index_analyzer import backtest_all_indices
