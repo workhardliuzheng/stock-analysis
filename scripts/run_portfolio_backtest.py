@@ -20,9 +20,9 @@ INDEX_PORTFOLIO = {
     '000688.SH': {'name': '科创50', 'weight': 0.10},   # 10%
     '399006.SZ': {'name': '创业板指', 'weight': 0.10},  # 10%
     '000001.SH': {'name': '上证综指', 'weight': 0.15},  # 15%
-    '399300.SZ': {'name': '沪深300', 'weight': 0.20},   # 20%
+    '000300.SH': {'name': '沪深300', 'weight': 0.20},   # 20% (修正代码)
     '000905.SH': {'name': '中证500', 'weight': 0.15},   # 15%
-    '399102.SZ': {'name': '深证成指', 'weight': 0.10},  # 10%
+    '399001.SZ': {'name': '深证成指', 'weight': 0.10},  # 10% (修正代码)
     '000016.SH': {'name': '上证50', 'weight': 0.10},   # 10%
     '000852.SH': {'name': '中证1000', 'weight': 0.10},  # 10%
 }
@@ -149,6 +149,7 @@ def run_portfolio_backtest(use_optimized_weights=False):
     
     # 添加信号列到组合DataFrame
     portfolio_df['signal'] = portfolio_signal.values
+    portfolio_df['final_signal'] = portfolio_signal.map({1.0: 'BUY', -1.0: 'SELL', 0.0: 'HOLD'})
     print(f"[OK] 信号列已添加")
     
     # 5. 回测组合
