@@ -416,6 +416,49 @@ def run_daily_workflow(to_emails=None):
     try:
         from analysis.index_analyzer import signal_all_indices
         signal_all_indices()
+        
+        # 生成持仓建议报告
+        print("\n[步骤2.1] 生成持仓建议报告...")
+        try:
+            from analysis.index_analyzer import IndexAnalyzer
+            from active_skills.stock_signal_generator.position_advisor import (
+                calculate_position_score, get_position_advice, generate_position_report
+            )
+            from entity import constant
+            from analysis.signal_generator import SignalGenerator
+            
+            # 加载所有指数信号数据（调用 analyze 以生成 final_signal）
+            signals = {}
+            for code in constant.TS_CODE_NAME_DICT.keys():
+                analyzer = IndexAnalyzer(code)
+                analyzer.analyze(include_ml=True)  # 关键：必须调用 analyze() 生成 final_signal
+                if len(analyzer.data) > 0 and 'final_signal' in analyzer.data.columns:
+                    signals[code] = {
+                        'total_rows': len(analyzer.data),
+                        'buy_signals': len(analyzer.data[analyzer.data['final_signal']=='BUY']),
+                        'sell_signals': len(analyzer.data[analyzer.data['final_signal']=='SELL']),
+                        'hold_signals': len(analyzer.data[analyzer.data['final_signal']=='HOLD'])
+                    }
+            
+            if signals:
+                # 计算仓位建议
+                df_score = calculate_position_score(signals)
+                df_advice = get_position_advice(df_score)
+                report = generate_position_report(df_advice)
+                
+                # 保存到文件
+                import os
+                os.makedirs('records', exist_ok=True)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                report_file = f'records/持仓建议报告_{timestamp}.txt'
+                with open(report_file, 'w', encoding='utf-8') as f:
+                    f.write(report)
+                print(f"[OK] 持仓建议报告已保存: {report_file}")
+            else:
+                print("[WARNING] 无信号数据可生成持仓建议")
+        except Exception as e:
+            print(f"[WARNING] 持仓建议生成失败: {e}")
+        
         print("[OK] 信号分析完成")
     except Exception as e:
         print(f"[ERROR] 信号分析失败: {str(e)}")
