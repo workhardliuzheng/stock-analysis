@@ -67,7 +67,7 @@ def main():
         try:
             print(f"  正在加载 {info['name']:>8} ({code})...")
             
-            analyzer = IndexAnalyzer(code, start_date='20210101')
+            analyzer = IndexAnalyzer(code, start_date='20230101')
             analyzer.analyze(include_ml=True, auto_tune=False)
             
             df = analyzer.data
