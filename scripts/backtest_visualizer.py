@@ -139,27 +139,37 @@ def plot_backtest_comparison(
         buy_values = []
         sell_values = []
         
+        # 从 backtester.py 的 trades 记录中读取
         if 'combined' in results and 'trades' in results['combined']:
             for trade in results['combined']['trades']:
-                date = pd.to_datetime(trade['exit_date'] if 'exit_date' in trade else trade.get('entry_date', ''))
-                if 'open' not in trade:  # 排除未平仓交易
-                    if trade.get('type', '') == 'BUY' and 'entry_date' in trade:
-                        if len(dates) > 0 and date >= dates.iloc[0] and date <= dates.iloc[-1]:
-                            buy_dates.append(date)
-                            pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
-                            buy_values.append(results['combined']['portfolio_values'][pos_idx])
-                    elif trade.get('type', '') == 'SELL' and 'exit_date' in trade:
+                # 读取卖出日期
+                if 'exit_date' in trade:
+                    try:
+                        date = pd.to_datetime(str(trade['exit_date']))
                         if len(dates) > 0 and date >= dates.iloc[0] and date <= dates.iloc[-1]:
                             sell_dates.append(date)
                             pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
                             sell_values.append(results['combined']['portfolio_values'][pos_idx])
+                    except:
+                        pass
+                
+                # 读取买入日期
+                if 'entry_date' in trade:
+                    try:
+                        date = pd.to_datetime(str(trade['entry_date']))
+                        if len(dates) > 0 and date >= dates.iloc[0] and date <= dates.iloc[-1]:
+                            buy_dates.append(date)
+                            pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
+                            buy_values.append(results['combined']['portfolio_values'][pos_idx])
+                    except:
+                        pass
         
         if buy_dates:
-            ax.scatter(buy_dates, buy_values, c='red', s=100, marker='^', 
-                      label='买入信号', zorder=5)
+            ax.scatter(buy_dates, buy_values, c='red', s=120, marker='^', 
+                      label=f'买入信号 ({len(buy_dates)})', zorder=6)
         if sell_dates:
-            ax.scatter(sell_dates, sell_values, c='green', s=100, marker='v', 
-                      label='卖出信号', zorder=5)
+            ax.scatter(sell_dates, sell_values, c='green', s=120, marker='v', 
+                      label=f'卖出信号 ({len(sell_dates)})', zorder=6)
         
         # 格式化
         ax.set_title(f'{index_name} 回测结果 ({start_date} ~ {end_date})', fontsize=14, fontweight='bold')

@@ -80,9 +80,11 @@ class DailyScheduler:
                 try:
                     logger.info('[OK] 同步 ' + index_name + ' (' + code + ')...')
                     
-                    analysis = SixtyIndexAnalysis(code)
-                    # 同步数据到MySQL
-                    analysis.sync_data()
+                    # SixtyIndexAnalysis.__init__() 不接受参数，先创建实例
+                    analysis = SixtyIndexAnalysis()
+                    # 直接调用 additional_data，它会同步所有指数
+                    start_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
+                    analysis.additional_data(start_date)
                     
                     logger.info('[OK] ' + index_name + ' 数据同步完成')
                 except Exception as e:
@@ -107,13 +109,8 @@ class DailyScheduler:
             try:
                 logger.info('[OK] 分析 ' + index_name + ' (' + code + ')...')
                 
-                # 1. 同步最新数据
-                logger.info('[OK] 同步最新数据...')
-                sync_analysis = SixtyIndexAnalysis()
-                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-                sync_analysis.additional_data(start_date)
-                
                 # 2. 使用IndexAnalyzer进行完整分析
+                # 注意：数据已在sync_latest_data()中同步过，无需重复同步
                 logger.info('[OK] 执行完整技术分析...')
                 analyzer = IndexAnalyzer(ts_code=code)
                 analysis_df = analyzer.analyze(include_ml=True)

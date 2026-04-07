@@ -243,17 +243,17 @@ def generate_html_report(signals_data, indices_info=None):
 </head>
 <body>
     <div class="container">
-        <h1>📊 股市每日投资报告</h1>
+        <h1>[REPORT] 股市每日投资报告</h1>
         <p class="date">生成时间: """ + datetime.now().strftime('%Y年%m月%d日 %H:%M:%S') + """</p>
         
         <div class="summary">
-            <h3>📈 市场概览</h3>
+            <h3>[OVERVIEW] 市场概览</h3>
             <p>今日市场情绪：""" + get_market_sentiment(signals_data) + """</p>
             <p>建议持仓比例：""" + get_recommended_position(signals_data) + """</p>
         </div>
         
         <div class="position-guide">
-            <h4>仓位分配建议 💰</h4>
+            <h4>[POSITION] 仓位分配建议</h4>
             <p>""" + get_position_allocation(signals_data) + """</p>
         </div>
         
@@ -328,13 +328,13 @@ def get_market_sentiment(signals_data):
     
     total = len(signals_data)
     if buy_count > total * 0.5:
-        return "📈 看涨情绪主导，建议积极建仓"
+        return "[BULLISH] 看涨情绪主导，建议积极建仓"
     elif sell_count > total * 0.5:
-        return "📉 看跌情绪主导，建议减仓观望"
+        return "[BEARISH] 看跌情绪主导，建议减仓观望"
     elif hold_count > total * 0.5:
-        return "⏸️ 市场观望情绪浓厚，建议保持仓位"
+        return "[WAIT] 市场观望情绪浓厚，建议保持仓位"
     else:
-        return "📊 市场分歧明显，建议谨慎操作"
+        return "[UNCERTAIN] 市场分歧明显，建议谨慎操作"
 
 
 def get_recommended_position(signals_data):
@@ -367,13 +367,13 @@ def get_position_allocation(signals_data):
         
         if signal == 'BUY':
             if confidence >= 0.8:
-                allocation.append(f"🚀 {ts_code}: 20% (高信心买入)")
+                allocation.append(f"[HIGH] {ts_code}: 20% (高信心买入)")
             elif confidence >= 0.6:
-                allocation.append(f"📈 {ts_code}: 15% (中等信心买入)")
+                allocation.append(f"[MEDIUM] {ts_code}: 15% (中等信心买入)")
             else:
-                allocation.append(f" bullish {ts_code}: 10% (低信心买入)")
+                allocation.append(f"[LOW] {ts_code}: 10% (低信心买入)")
         elif signal == 'SELL':
-            allocation.append(f"📉 {ts_code}: 清仓> (卖出信号)")
+            allocation.append(f"[SELL] {ts_code}: 清仓> (卖出信号)")
     
     if allocation:
         return '\n'.join(allocation)
@@ -389,11 +389,11 @@ def run_daily_workflow(to_emails=None):
     import sys
     
     print("=" * 60)
-    print("🚀 开始每日工作流")
+    print("[START] 开始每日工作流")
     print("=" * 60)
     
     # 1. 数据同步
-    print("\n📝 步骤1: 同步指数数据...")
+    print("\n[STEP 1] 同步指数数据...")
     print("-" * 40)
     try:
         result = subprocess.run(
@@ -403,50 +403,98 @@ def run_daily_workflow(to_emails=None):
             timeout=300
         )
         if result.returncode == 0:
-            print("✅ 数据同步成功")
+            print("[OK] 数据同步成功")
         else:
-            print(f"⚠️ 数据同步警告: {result.stderr}")
+            print(f"[WARNING] 数据同步警告: {result.stderr}")
     except Exception as e:
-        print(f"❌ 数据同步失败: {str(e)}")
+        print(f"[ERROR] 数据同步失败: {str(e)}")
         return
     
     # 2. 信号分析
-    print("\n📊 步骤2: 分析数据生成信号...")
+    print("\n[STEP 2] 分析数据生成信号...")
     print("-" * 40)
     try:
         from analysis.index_analyzer import signal_all_indices
         signal_all_indices()
-        print("✅ 信号分析完成")
+        print("[OK] 信号分析完成")
     except Exception as e:
-        print(f"❌ 信号分析失败: {str(e)}")
+        print(f"[ERROR] 信号分析失败: {str(e)}")
         return
     
     # 3. 生成HTML报表
-    print("\n📄 步骤3: 生成HTML报表...")
+    print("\n[STEP 3] 生成HTML报表...")
     print("-" * 40)
     try:
         # 使用report_generator模块生成报表
         import report_generator
-        _, html_content = report_generator.save_html_report()
-        print("✅ HTML报表已生成")
+        report_file, html_content = report_generator.save_html_report()  # 保存返回的report_file
+        print("[OK] HTML报表已生成: " + report_file)
     except Exception as e:
-        print(f"❌ 报表生成失败: {str(e)}")
+        print(f"[ERROR] 报表生成失败: {str(e)}")
         return
     
     # 4. 发送邮件
     if to_emails:
-        print(f"\n📧 步骤4: 发送邮件至 {to_emails}...")
+        print(f"\n[STEP 4] 发送邮件至 {to_emails}...")
         print("-" * 40)
         
-        # 使用email_sender模块发送邮件
-        import email_sender
-        success = email_sender.send_daily_report(to_emails)
+        # 发送邮件功能
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.base import MIMEBase
+        from email.mime.text import MIMEText
+        from email.utils import formatdate
+        from email import encoders
+        import os
+        
+        success = False
+        
+        try:
+            # 邮件配置
+            smtp_server = "smtp.163.com"
+            smtp_port = 465
+            smtp_user = "workhardliuzheng@163.com"
+            smtp_password = "UBnHVwGi2QG3JEA2"  # 客户端授权码
+            
+            # 构建邮件
+            msg = MIMEMultipart()
+            msg['From'] = smtp_user
+            msg['To'] = to_emails
+            msg['Date'] = formatdate(localtime=True)
+            msg['Subject'] = "[A股投资顾问] " + datetime.now().strftime('%Y-%m-%d') + " 市场分析报告"
+            
+            # 邮件正文
+            body = MIMEText("股市分析系统每日报告，请查看附件HTML文件。", 'plain', 'utf-8')
+            msg.attach(body)
+            
+            # 读取HTML报表
+            # 使用report_generator返回的report_file（绝对路径）
+            report_path = report_file  # 直接使用返回的绝对路径
+            if os.path.exists(report_path):
+                with open(report_path, 'rb') as f:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(f.read())
+                    encoders.encode_base64(part)
+                    part.add_header('Content-Disposition', f'attachment; filename="daily_report_{datetime.now().strftime("%Y%m%d")}.html"')
+                    msg.attach(part)
+                
+                # 发送邮件
+                with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
+                    server.login(smtp_user, smtp_password)
+                    server.sendmail(smtp_user, to_emails.split(','), msg.as_string())
+                
+                print("[OK] 邮件发送成功")
+                success = True
+            else:
+                print("[WARNING] HTML报表未生成，跳过邮件发送: " + report_path)
+        except Exception as e:
+            print(f"[ERROR] 邮件发送失败: {str(e)}")
         
         if not success:
-            print("⚠️ 邮件发送未成功，但不影响其他流程")
+            print("[WARNING] 邮件发送未成功，但不影响其他流程")
     
     print("\n" + "=" * 60)
-    print("✨ 每日工作流完成！")
+    print("[DONE] 每日工作流完成！")
     print("=" * 60)
 
 
