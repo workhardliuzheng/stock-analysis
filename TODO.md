@@ -12,13 +12,13 @@
 
 | 类别 | 数量 | 状态 |
 |------|------|------|
-| **已实现** | 19项 | ✅ 已完成并验证 |
+| **已实现** | 20项 | ✅ 已完成并验证 |
 | **待实现** | 6项 | ⏳ 计划中 |
-| **总计** | 25项 | - |
+| **总计** | 26项 | - |
 
 ---
 
-## 🎯 第一部分：已实现优化（18项）
+## 🎯 第一部分：已实现优化（20项）
 
 ### ✅ V7-5 自适应融合优化 (2026-04-03)
 - **文件**: `analysis/adaptive_fusion_optimizer.py`
@@ -107,6 +107,22 @@
 - **方案**: Streamlit搭建Web界面
 - **预期效果**: 提升用户体验
 - **难度**: 中等
+
+---
+
+## 🟢 最近完成（2026-04-07）
+
+### ✅ V7-6 动态权重优化集成 (2026-04-07)
+- **文件**: `main_v75_optimized.py`, `scripts/run_v75_backtest_with_optimized_weights.py`
+- **效果**: 组合总收益 +17.23% (从+12.86%提升+4.37%)
+- **每个指数独立优化权重**：
+  - 深证成指: factor_score 85.46%, ml_return 3.79%, ml_signal 1.70%, factor_signal 9.05%
+  - 创业板指: factor_score 83.13%, ml_return 11.43%, ml_signal 0.12%, factor_signal 5.32%
+  - 上证综指: factor_score 84.58%, ml_return 0.95%, ml_signal 1.43%, factor_signal 13.05%
+  - 沪深300: factor_score 84.17%, ml_return 7.92%, ml_signal 5.71%, factor_signal 2.20%
+  - 科创50: factor_score 56.19%, ml_return 14.17%, ml_signal 15.20%, factor_signal 14.45%
+- **回测验证**: 见 `BACKTEST_LOG.md #13`
+- **关键发现**: 必须使用字符串信号（BUY/SELL/HOLD），不是数值（1/-1/0）
 
 ---
 

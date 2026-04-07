@@ -15,6 +15,7 @@
 | V7-2 | 特征交叉工程 | +109.97% (科创50) | - | - | ✅ |
 | V7-1 | 模型持久化 | - | - | - | ✅ |
 | V6 | 激进仓位优化 | +73.97% → +264.98% | - | - | ✅ |
+| V7-6 | 动态权重优化集成 | **+17.23%** | 72.0% | **0.89** | ✅ |
 
 ---
 
@@ -205,12 +206,17 @@
 # 运行V7-5回测记录
 python scripts/record_v75_backtest.py
 
-# 运行多指数组合回测
-python scripts/run_portfolio_backtest.py
+# 运行多指数组合回测（使用动态优化权重）
+python scripts/run_v75_backtest_with_optimized_weights.py
+
+# 运行标准回测（使用固定20%权重）
+python scripts/run_v75_backtest_standard.py
 ```
 
 ---
 
-> 最后更新: 2026-04-03
+> 最后更新: 2026-04-07
 > 
-> 整合记录: BACKTEST_LOG.md + V7-5_BACKTEST_LOG.md
+> 优化版本: V7-6 动态权重优化集成（每个指数独立Optuna优化）
+> 
+> 关键修正: 回测信号必须使用字符串格式（BUY/SELL/HOLD），不是数值（1/-1/0）

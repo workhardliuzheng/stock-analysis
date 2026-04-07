@@ -15,6 +15,9 @@ from datetime import datetime
 import pandas as pd
 import numpy as np
 
+# 导入持仓建议模块
+from position_advisor import calculate_position_score, get_position_advice, generate_position_report, get_position_dict
+
 
 def generate_signal_report(signals, indices_info=None):
     """
@@ -252,7 +255,7 @@ def generate_signal_report(signals, indices_info=None):
 
 def get_position_recommendations(signals, indices_info=None):
     """
-    获取仓位建议
+    获取仓位建议 (使用新的position_advisor模块)
     
     Args:
         signals: 信号数据
@@ -270,86 +273,59 @@ def get_position_recommendations(signals, indices_info=None):
             '000852.SH': '中证1000'
         }
     
-    positions = {}
+    # 使用position_advisor计算分数
+    df_score = calculate_position_score(signals, indices_info)
     
-    for code, stats in signals.items():
-        total = stats['total_rows']
-        buy_pct = stats['buy_signals'] / total * 100 if total > 0 else 0
-        sell_pct = stats['sell_signals'] / total * 100 if total > 0 else 0
-        hold_pct = stats['hold_signals'] / total * 100 if total > 0 else 0
-        signal_strength = buy_pct - sell_pct
-        
-        # 基础仓位
-        if signal_strength > 15:
-            base_position = 0.80
-        elif signal_strength > 5:
-            base_position = 0.65
-        elif signal_strength > -5:
-            base_position = 0.50
-        elif signal_strength > -15:
-            base_position = 0.35
-        else:
-            base_position = 0.20
-        
-        # 根据信号频率调整
-        signal_frequency = buy_pct + sell_pct
-        if signal_frequency > 70:
-            adjustment = 0.10
-        elif signal_frequency > 60:
-            adjustment = 0.05
-        elif signal_frequency < 40:
-            adjustment = -0.10
-        else:
-            adjustment = 0.0
-        
-        final_position = min(0.95, max(0.05, base_position + adjustment))
-        
-        positions[code] = {
-            '指数': indices_info.get(code, code),
-            '建议仓位': f"{final_position*100:.0f}%",
-            '信号强度': signal_strength,
-            '信号频率': signal_frequency,
-            'BUY%': buy_pct,
-            'SELL%': sell_pct,
-            'HOLD%': hold_pct,
-            '操作建议': '买入' if signal_strength > 5 else ('卖出' if signal_strength < -5 else '维持')
-        }
+    # 获取仓位建议
+    df_advice = get_position_advice(df_score)
     
-    return positions
+    # 返回字典格式
+    return get_position_dict(df_advice)
 
 
 def print_position_report(positions):
-    """打印仓位报告"""
-    report = []
-    report.append("=" * 80)
-    report.append("📊 仓位建议报告")
-    report.append("=" * 80)
-    report.append("")
-    report.append(f"{'指数':<10} {'建议仓位':<12} {'信号强度':<12} {'信号频率':<12} {'操作建议':<10}")
-    report.append("-" * 80)
+    """打印仓位报告 (使用新的position_advisor)"""
+    # 构建DataFrame，包含所有必要列
+    data = []
+    for code, info in positions.items():
+        data.append({
+            '代码': code,
+            '指数': info['指数'],
+            '建议仓位': f"{int(info['建议仓位']*100)}%",
+            '信号强度': info['信号强度'],
+            '信号频率': info['信号频率'],
+            '操作建议': info['操作建议'],
+            '操作描述': info.get('操作描述', ''),
+            '风险等级': info.get('风险等级', ''),
+            '风险说明': info.get('风险说明', ''),
+            'BUY%': info.get('BUY%', 0),
+            'SELL%': info.get('SELL%', 0),
+            'HOLD%': info.get('HOLD%', 0),
+            '总分': info.get('总分', 50),
+            '紧急预警': info.get('紧急预警', [])
+        })
     
-    for code, data in sorted(positions.items(), key=lambda x: x[1]['信号强度'], reverse=True):
-        report.append(f"{data['指数']:<10} {data['建议仓位']:<12} {data['信号强度']+20:<12.1f} {data['信号频率']:<12.1f} {data['操作建议']:<10}")
+    df = pd.DataFrame(data)
     
-    report.append("")
-    
-    # 总体仓位
-    total_position = sum(float(data['建议仓位'].replace('%', '')) for data in positions.values()) / len(positions)
-    report.append(f"[OK] 组合建议仓位: {total_position*100:.0f}%")
-    report.append("")
-    
-    return "\n".join(report)
+    # 生成完整报告
+    return generate_position_report(df)
 
 
 if __name__ == "__main__":
     # 测试数据
     signals = {
-        '000688.SH': {'total_rows': 282, 'buy_signals': 62, 'sell_signals': 133, 'hold_signals': 87},
-        '399006.SZ': {'total_rows': 297, 'buy_signals': 106, 'sell_signals': 120, 'hold_signals': 71},
-        '000001.SH': {'total_rows': 297, 'buy_signals': 38, 'sell_signals': 182, 'hold_signals': 77},
-        '000905.SH': {'total_rows': 282, 'buy_signals': 50, 'sell_signals': 166, 'hold_signals': 66},
-        '000852.SH': {'total_rows': 282, 'buy_signals': 32, 'sell_signals': 168, 'hold_signals': 82}
+        '000688.SH': {'total_rows': 282, 'buy_signals': 62, 'sell_signals': 33, 'hold_signals': 187},
+        '399006.SZ': {'total_rows': 297, 'buy_signals': 106, 'sell_signals': 50, 'hold_signals': 141},
+        '000001.SH': {'total_rows': 297, 'buy_signals': 38, 'sell_signals': 82, 'hold_signals': 177},
+        '000905.SH': {'total_rows': 282, 'buy_signals': 80, 'sell_signals': 30, 'hold_signals': 172},
+        '000852.SH': {'total_rows': 282, 'buy_signals': 32, 'sell_signals': 98, 'hold_signals': 152}
     }
+    
+    # 计算仓位建议
+    positions = get_position_recommendations(signals)
+    
+    # 打印报告
+    print(print_position_report(positions))
     
     print(generate_signal_report(signals))
     print("\n")
