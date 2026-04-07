@@ -176,36 +176,33 @@ def generate_plot(index_name: str, ts_code: str,
     # 添加买卖点标记
     print("[OK] 添加买卖点标记...")
     
-    if 'combined' in results and 'trades' in results['combined']:
-        buy_dates = []
-        sell_dates = []
-        buy_values = []
-        sell_values = []
+    buy_dates = []
+    sell_dates = []
+    buy_values = []
+    sell_values = []
+    
+    # 从信号列读取买卖点（而不是trades）
+    if 'final_signal' in data.columns:
+        buy_signals = data[data['final_signal'] == 'BUY']
+        sell_signals = data[data['final_signal'] == 'SELL']
         
-        for trade in results['combined']['trades']:
-            # 买入点
-            if 'entry_date' in trade:
-                try:
-                    date = pd.to_datetime(str(trade['entry_date']))
-                    if len(dates) > 0 and date >= dates.iloc[0] and date <= dates.iloc[-1]:
-                        buy_dates.append(date)
-                        pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
-                        buy_values.append(results['combined']['portfolio_values'][pos_idx])
-                        print(f"  买入: {trade['entry_date']} -> {trade.get('entry_price', 'N/A')}")
-                except Exception as e:
-                    print(f"  [ERROR] 买入点解析失败: {e}")
-            
-            # 卖出点
-            if 'exit_date' in trade:
-                try:
-                    date = pd.to_datetime(str(trade['exit_date']))
-                    if len(dates) > 0 and date >= dates.iloc[0] and date <= dates.iloc[-1]:
-                        sell_dates.append(date)
-                        pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
-                        sell_values.append(results['combined']['portfolio_values'][pos_idx])
-                        print(f"  卖出: {trade['exit_date']} -> {trade.get('exit_price', 'N/A')}")
-                except Exception as e:
-                    print(f"  [ERROR] 卖出点解析失败: {e}")
+        if len(buy_signals) > 0:
+            for idx, row in buy_signals.iterrows():
+                date = pd.to_datetime(str(row['trade_date']))
+                if len(dates) > 0 and date >= dates[0] and date <= dates[-1]:
+                    buy_dates.append(date)
+                    pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
+                    buy_values.append(results['combined']['portfolio_values'][pos_idx])
+        
+        if len(sell_signals) > 0:
+            for idx, row in sell_signals.iterrows():
+                date = pd.to_datetime(str(row['trade_date']))
+                if len(dates) > 0 and date >= dates[0] and date <= dates[-1]:
+                    sell_dates.append(date)
+                    pos_idx = max(0, min(len(dates)-1, sum(dates <= date) - 1))
+                    sell_values.append(results['combined']['portfolio_values'][pos_idx])
+        
+        print(f"[OK] 从信号列读取: BUY={len(buy_dates)}, SELL={len(sell_dates)}")
         
         if buy_dates:
             ax.scatter(buy_dates, buy_values, c='red', s=150, marker='^', 
