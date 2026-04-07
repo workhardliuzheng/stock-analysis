@@ -134,7 +134,7 @@ def sync_index_only(start_date='20200101'):
 
     print('同步指数数据')
 
-    SixtyIndexAnalysis().additional_data(start_date)
+    SixtyIndexAnalysis().additional_data(pe_cal_start_date=start_date)
 
 
 if __name__ == "__main__":

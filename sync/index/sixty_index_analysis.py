@@ -98,13 +98,18 @@ class SixtyIndexAnalysis:
         print(f"\n开始同步指数 {index_name} ({ts_code})")
         
         # 1. 查询增量起始日期
-        max_trade_date = mapper.get_max_trade_time(ts_code)
-        if max_trade_date is None:
-            start_date = constant.HISTORY_START_DATE_MAP.get(ts_code, '20150101')
+        # 如果用户指定了起始日期，优先使用
+        if pe_cal_start_date and pe_cal_start_date != '20200101':
+            start_date = pe_cal_start_date
+            print(f"  使用用户指定起始日期: {start_date}")
         else:
-            start_date = TimeUtils.get_n_days_before_or_after(
-                TimeUtils.date_to_str(max_trade_date), 1, is_before=False
-            )
+            max_trade_date = mapper.get_max_trade_time(ts_code)
+            if max_trade_date is None:
+                start_date = constant.HISTORY_START_DATE_MAP.get(ts_code, '20150101')
+            else:
+                start_date = TimeUtils.get_n_days_before_or_after(
+                    TimeUtils.date_to_str(max_trade_date), 1, is_before=False
+                )
         end_date = TimeUtils.get_current_date_str()
         
         print(f"  同步日期范围: {start_date} - {end_date}")

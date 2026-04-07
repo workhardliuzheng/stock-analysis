@@ -164,6 +164,34 @@ class IndexAnalyzer:
         print(f"正在生成 {self.name} 的最终信号...")
         self.data = self.signal_generator.generate(self.data)
         
+        # 止损信号应用
+        try:
+            from analysis.stop_loss_manager import StopLossManager, apply_stop_signals
+            print(f"正在应用 {self.name} 的止损信号...")
+            stop_manager = StopLossManager(
+                fixed_stop_loss=-10.0,  # 固定止损10%
+                trailing_stop_loss=-8.0,  # 追踪止损8%
+                time_stop_days=10,  # 时间止损10天
+                enabled=True
+            )
+            
+            # 创建position列用于止损
+            self.data['position'] = self.data['final_signal'].map(
+                {'BUY': 1, 'SELL': -1, 'HOLD': 0}
+            ).fillna(0)
+            
+            # 应用止损信号
+            self.data = apply_stop_signals(self.data, stop_manager)
+            
+            # 更新最终信号 (stopsignal = SELL时覆盖)
+            self.data['final_signal_stop'] = self.data['final_signal'].copy()
+            self.data.loc[self.data['stop_signal'] == 'SELL', 'final_signal_stop'] = 'SELL'
+            
+            print(f"  [OK] 止损信号应用完成")
+            
+        except Exception as e:
+            print(f"  [WARNING] 止损信号应用失败: {e}")
+        
         return self.data
     
     def _get_ml_predictor(self):

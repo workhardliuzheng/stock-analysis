@@ -92,6 +92,9 @@ class SignalGenerator:
         factor_buy = factor_signal == 'BUY'
         factor_sell = factor_signal == 'SELL'
 
+        # 新增：直接根据因子评分触发SELL（补充当前逻辑）
+        direct_sell = factor_score < 35  # 如果因子评分很低，直接卖出
+
         # 信号融合
         if trend_state == 'uptrend':
             if ml_bullish and factor_buy:
@@ -110,12 +113,14 @@ class SignalGenerator:
             elif ml_bullish and factor_buy:
                 signal = 'HOLD'      # 下行趋势中两路都看多，但不急于买入
             else:
-                signal = 'HOLD'
+                signal = 'SELL'      # 下行趋势中没有明确看多信号，卖出
         else:  # sideways
             if ml_bullish and factor_buy:
                 signal = 'BUY'
             elif ml_bearish and factor_sell:
                 signal = 'SELL'
+            elif direct_sell:
+                signal = 'SELL'      # 新增：因子评分很低时卖出
             else:
                 signal = 'HOLD'
 
