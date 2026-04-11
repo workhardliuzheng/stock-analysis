@@ -72,6 +72,10 @@ class IndexAnalyzer:
         self.signal_generator = SignalGenerator()
         self._ml_predictor = None  # 延迟加载，避免强制依赖 xgboost
         
+        # V8: 市场状态识别器
+        from analysis.market_regime_detector import MarketRegimeDetector
+        self.regime_detector = MarketRegimeDetector()
+        
         # 加载数据
         self.mapper = SixtyIndexMapper()
         self.data = self._load_data()
@@ -131,7 +135,11 @@ class IndexAnalyzer:
         print(f"正在计算 {self.name} 的历史百分位...")
         self.data = self.percentile_calculator.calculate(self.data)
         
-        # 多因子评分
+        # V8: 市场状态识别 (需在percentile之后, multi_factor之前)
+        print(f"正在识别 {self.name} 的市场状态...")
+        self.data = self.regime_detector.detect(self.data)
+        
+        # 多因子评分 (V8: 使用regime动态权重)
         print(f"正在计算 {self.name} 的多因子评分...")
         self.data = self.multi_factor_scorer.calculate(self.data)
         

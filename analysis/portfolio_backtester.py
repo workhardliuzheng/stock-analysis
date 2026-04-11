@@ -1,0 +1,770 @@
+"""
+组合级回测引擎
+
+基于多指数 fused_signal (V7-5) 信号，按 position_advisor 动态分配权重，
+逐日仿真计算组合净值，生成综合报告与图表。
+
+交易逻辑:
+- T日信号 -> T+1日执行（延迟一天）
+- 佣金: 万0.6 (单边)，仅在权重变化时收取
+- 总仓位上限: 90%，剩余为现金
+
+使用:
+    from analysis.portfolio_backtester import PortfolioBacktester
+    bt = PortfolioBacktester(start_date='20200101')
+    results = bt.run()
+"""
+
+import os
+import sys
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+# 确保项目根目录在 path 中
+_project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from entity import constant
+
+
+class PortfolioBacktester:
+    """
+    组合级回测引擎
+
+    功能:
+    1. 加载 8 个指数数据，生成 fused_signal (V7-5)
+    2. 基于 position_advisor 动态分配各指数权重
+    3. 逐日仿真组合净值（含佣金、T+1 延迟）
+    4. 计算组合绩效（收益、夏普、回撤、胜率等）
+    5. 生成双 Y 轴图表（上证综指 vs 组合净值 + 买卖点）
+    """
+
+    SHANGHAI_CODE = '000001.SH'
+
+    def __init__(self,
+                 initial_capital: float = 100000,
+                 commission_rate: float = 0.00006,
+                 start_date: str = '20200101',
+                 signal_column: str = 'fused_signal',
+                 fallback_signal: str = 'final_signal',
+                 position_window: int = 30,
+                 total_position_cap: float = 1.0,
+                 min_rebalance_threshold: float = 0.001,
+                 chart_save_dir: str = 'records'):
+        """
+        Args:
+            initial_capital: 初始资金
+            commission_rate: 单边佣金率 (万0.6 = 0.00006)
+            start_date: 回测起始日期 (YYYYMMDD)
+            signal_column: 主信号列名
+            fallback_signal: 回退信号列名
+            position_window: 滑动窗口天数 (用于计算信号分布)
+            total_position_cap: 总仓位上限
+            min_rebalance_threshold: 最小调仓阈值 (权重变化低于此值不调仓)
+            chart_save_dir: 图表保存目录
+        """
+        self.initial_capital = initial_capital
+        self.commission_rate = commission_rate
+        self.start_date = start_date
+        self.signal_column = signal_column
+        self.fallback_signal = fallback_signal
+        self.position_window = position_window
+        self.total_position_cap = total_position_cap
+        self.min_rebalance_threshold = min_rebalance_threshold
+        self.chart_save_dir = chart_save_dir
+
+    def run(self) -> dict:
+        """
+        运行组合回测
+
+        Returns:
+            dict: 完整回测结果
+        """
+        print("=" * 70)
+        print("  股票分析系统 - 组合回测引擎")
+        print("=" * 70)
+        print(f"  初始资金: {self.initial_capital:,.0f}")
+        print(f"  佣金: 万{self.commission_rate * 10000:.1f} (单边)")
+        print(f"  起始日期: {self.start_date}")
+        print(f"  信号策略: {self.signal_column}")
+        print(f"  仓位上限: {self.total_position_cap * 100:.0f}%")
+        print(f"  仓位上限: {self.total_position_cap * 100:.0f}%")
+        print("=" * 70)
+
+        # 1. 加载所有指数数据
+        print("\n[1/5] 加载指数数据并生成信号...")
+        index_data = self._load_all_indices()
+        if len(index_data) < 2:
+            print("[ERROR] 可用指数不足，无法进行组合回测")
+            return {}
+
+        # 2. 日期对齐
+        print(f"\n[2/5] 日期对齐... (共 {len(index_data)} 个指数)")
+        common_dates, aligned_data = self._align_dates(index_data)
+        print(f"  公共交易日: {len(common_dates)} 天")
+        print(f"  日期范围: {common_dates[0].strftime('%Y-%m-%d')} ~ {common_dates[-1].strftime('%Y-%m-%d')}")
+
+        if len(common_dates) < self.position_window + 10:
+            print(f"[ERROR] 公共交易日不足 (需要至少 {self.position_window + 10} 天)")
+            return {}
+
+        # 确定实际使用的信号列
+        actual_signal_col = self._resolve_signal_column(aligned_data)
+        print(f"  使用信号列: {actual_signal_col}")
+
+        # 3. 逐日仿真
+        print(f"\n[3/5] 逐日仿真...")
+        sim_result = self._simulate(aligned_data, common_dates, actual_signal_col)
+
+        # 4. 计算绩效指标
+        print(f"\n[4/5] 计算绩效指标...")
+        metrics = self._calculate_metrics(sim_result, common_dates, aligned_data)
+
+        # 5. 生成图表
+        print(f"\n[5/5] 生成图表...")
+        chart_path = self._generate_chart(
+            common_dates, sim_result, metrics, aligned_data
+        )
+        metrics['chart_path'] = chart_path
+
+        # 输出报告
+        self._print_report(metrics)
+
+        return metrics
+
+    # ==================== 数据加载 ====================
+
+    def _load_all_indices(self) -> Dict[str, pd.DataFrame]:
+        """加载所有指数数据并生成信号"""
+        from analysis.index_analyzer import IndexAnalyzer
+
+        index_data = {}
+        codes = list(constant.TS_CODE_NAME_DICT.keys())
+
+        for i, code in enumerate(codes):
+            name = constant.TS_CODE_NAME_DICT.get(code, code)
+            print(f"  [{i+1}/{len(codes)}] {name} ({code})...", end=" ", flush=True)
+
+            try:
+                analyzer = IndexAnalyzer(code, start_date=self.start_date)
+
+                if len(analyzer.data) < 100:
+                    print(f"数据不足 ({len(analyzer.data)} 行)，跳过")
+                    continue
+
+                analyzer.analyze(include_ml=True)
+
+                # 尝试生成 fused_signal
+                df = self._add_fused_signal(analyzer.data)
+                index_data[code] = df
+
+                n_rows = len(df)
+                sig_col = self.signal_column if self.signal_column in df.columns else self.fallback_signal
+                if sig_col in df.columns:
+                    n_buy = (df[sig_col] == 'BUY').sum()
+                    n_sell = (df[sig_col] == 'SELL').sum()
+                    print(f"OK ({n_rows} 行, BUY={n_buy}, SELL={n_sell})")
+                else:
+                    print(f"OK ({n_rows} 行, 信号列缺失)")
+
+            except Exception as e:
+                print(f"失败: {e}")
+
+        return index_data
+
+    def _add_fused_signal(self, df: pd.DataFrame) -> pd.DataFrame:
+        """尝试添加 fused_signal 列"""
+        if self.signal_column == 'fused_signal' and 'fused_signal' not in df.columns:
+            try:
+                from analysis.adaptive_fusion_optimizer import MetaLearner
+                meta = MetaLearner(max_trials=10)
+                # 需要 factor_score, factor_signal, ml_predicted_return, ml_signal
+                required = ['factor_score', 'factor_signal', 'ml_predicted_return', 'ml_signal']
+                if all(c in df.columns for c in required):
+                    df = meta.generate_fused_signal(df)
+            except Exception:
+                pass
+        return df
+
+    def _resolve_signal_column(self, aligned_data: Dict[str, pd.DataFrame]) -> str:
+        """确定实际可用的信号列"""
+        # 检查所有指数是否都有主信号列
+        first_df = next(iter(aligned_data.values()))
+        if self.signal_column in first_df.columns:
+            return self.signal_column
+        if self.fallback_signal in first_df.columns:
+            print(f"  [WARNING] {self.signal_column} 不可用，回退到 {self.fallback_signal}")
+            return self.fallback_signal
+        # 最终回退
+        for col in ['final_signal', 'factor_signal', 'ml_signal']:
+            if col in first_df.columns:
+                print(f"  [WARNING] 回退到 {col}")
+                return col
+        raise ValueError("没有可用的信号列")
+
+    # ==================== 日期对齐 ====================
+
+    def _align_dates(self, index_data: Dict[str, pd.DataFrame]) -> Tuple[list, Dict[str, pd.DataFrame]]:
+        """
+        将所有指数按公共交易日对齐
+
+        Returns:
+            (common_dates_sorted, aligned_data_dict)
+        """
+        # 取日期交集
+        date_sets = []
+        for code, df in index_data.items():
+            dates = set(pd.to_datetime(df['trade_date']).dt.normalize())
+            date_sets.append(dates)
+
+        common_dates = set.intersection(*date_sets)
+        common_dates = sorted(common_dates)
+
+        if not common_dates:
+            raise ValueError("没有公共交易日")
+
+        # 过滤每个 DataFrame
+        aligned = {}
+        for code, df in index_data.items():
+            df = df.copy()
+            df['trade_date'] = pd.to_datetime(df['trade_date']).dt.normalize()
+            df = df[df['trade_date'].isin(common_dates)].sort_values('trade_date').reset_index(drop=True)
+
+            # 确保数值列
+            for col in ['close', 'open', 'pct_chg']:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+
+            aligned[code] = df
+
+        return common_dates, aligned
+
+    # ==================== 权重计算 ====================
+
+    def _compute_daily_weights(self,
+                               aligned_data: Dict[str, pd.DataFrame],
+                               day_idx: int,
+                               signal_col: str) -> Dict[str, float]:
+        """
+        计算第 day_idx 天的目标仓位权重
+
+        逻辑:
+        1. 取滑动窗口内信号分布 -> position_advisor 计算建议仓位
+        2. 按当日信号过滤 (SELL->0, HOLD->减半, BUY->保持)
+        3. 归一化到 total_position_cap
+        """
+        codes = list(aligned_data.keys())
+        n_codes = len(codes)
+
+        # 预热期: 使用等权
+        if day_idx < self.position_window:
+            equal_weight = self.total_position_cap / n_codes
+            weights = {}
+            for code in codes:
+                df = aligned_data[code]
+                sig = df.iloc[day_idx].get(signal_col, 'HOLD')
+                if sig == 'BUY':
+                    weights[code] = equal_weight
+                elif sig == 'HOLD':
+                    weights[code] = equal_weight * 1.0
+                else:
+                    weights[code] = 0.0
+            return self._normalize_weights(weights)
+
+        # 正式期: 用 position_advisor 计算
+        window_start = max(0, day_idx - self.position_window + 1)
+
+        # 统计窗口内信号分布
+        signals = {}
+        for code in codes:
+            df = aligned_data[code]
+            window_signals = df[signal_col].iloc[window_start:day_idx + 1]
+            total = len(window_signals)
+            signals[code] = {
+                'total_rows': total,
+                'buy_signals': int((window_signals == 'BUY').sum()),
+                'sell_signals': int((window_signals == 'SELL').sum()),
+                'hold_signals': int((window_signals == 'HOLD').sum()),
+            }
+
+        # 调用 position_advisor
+        try:
+            from active_skills.stock_signal_generator.position_advisor import (
+                calculate_position_score, get_position_advice, get_position_dict
+            )
+            df_score = calculate_position_score(signals)
+            df_advice = get_position_advice(df_score)
+            pos_dict = get_position_dict(df_advice)
+        except Exception:
+            # 如果 position_advisor 不可用，使用等权
+            equal_weight = self.total_position_cap / n_codes
+            return {code: equal_weight for code in codes}
+
+        # 按当日信号过滤
+        weights = {}
+        for code in codes:
+            df = aligned_data[code]
+            current_signal = df.iloc[day_idx].get(signal_col, 'HOLD')
+
+            advised_weight = pos_dict.get(code, {}).get('建议仓位', 0.5)
+
+            if current_signal == 'BUY':
+                weights[code] = advised_weight
+            elif current_signal == 'HOLD':
+                weights[code] = advised_weight * 1.0
+            else:  # SELL
+                weights[code] = 0.0
+
+        return self._normalize_weights(weights)
+
+    def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
+        """归一化权重到 total_position_cap"""
+        total = sum(weights.values())
+        if total <= 0:
+            return {code: 0.0 for code in weights}
+        if total <= self.total_position_cap:
+            return weights
+        factor = self.total_position_cap / total
+        return {code: w * factor for code, w in weights.items()}
+
+    # ==================== 逐日仿真 ====================
+
+    def _simulate(self,
+                  aligned_data: Dict[str, pd.DataFrame],
+                  common_dates: list,
+                  signal_col: str) -> dict:
+        """
+        逐日仿真组合
+
+        Returns:
+            dict: {
+                'portfolio_values': list,
+                'daily_returns': list,
+                'benchmark_values': list,
+                'trade_events': list,
+                'total_commission': float,
+                'index_weights_history': list,
+                'index_contributions': dict
+            }
+        """
+        n_days = len(common_dates)
+        codes = list(aligned_data.keys())
+
+        portfolio_value = self.initial_capital
+        index_weights = {code: 0.0 for code in codes}
+        prev_target_weights = None
+
+        portfolio_values = [portfolio_value]
+        daily_returns_list = [0.0]
+        trade_events = []
+        total_commission = 0.0
+        index_weights_history = []
+
+        # 跟踪每指数贡献
+        index_cumulative_contribution = {code: 0.0 for code in codes}
+        index_avg_weight_sum = {code: 0.0 for code in codes}
+
+        # 基准: 等权买入持有
+        benchmark_value = self.initial_capital
+        benchmark_weight = 1.0 / len(codes)
+        benchmark_values = [benchmark_value]
+
+        for t in range(n_days):
+            # 计算今日目标权重
+            target_weights = self._compute_daily_weights(aligned_data, t, signal_col)
+
+            # T+1 延迟: 执行昨日的目标权重
+            if t > 0 and prev_target_weights is not None:
+                # 计算调仓佣金
+                day_commission = 0.0
+                for code in codes:
+                    weight_change = abs(prev_target_weights.get(code, 0.0) - index_weights.get(code, 0.0))
+                    if weight_change > self.min_rebalance_threshold:
+                        cost = weight_change * portfolio_value * self.commission_rate
+                        day_commission += cost
+                total_commission += day_commission
+                portfolio_value -= day_commission
+
+                # 更新权重
+                index_weights = dict(prev_target_weights)
+
+            # 计算今日组合收益
+            daily_return = 0.0
+            for code in codes:
+                w = index_weights.get(code, 0.0)
+                if w > 0:
+                    df = aligned_data[code]
+                    pct = df.iloc[t].get('pct_chg', 0)
+                    if pd.notna(pct):
+                        pct = float(pct) / 100.0
+                        ret_contribution = w * pct
+                        daily_return += ret_contribution
+                        index_cumulative_contribution[code] += ret_contribution
+
+            if t > 0:
+                portfolio_value *= (1 + daily_return)
+                portfolio_values.append(portfolio_value)
+                daily_returns_list.append(daily_return)
+
+                # 基准收益
+                bm_return = 0.0
+                for code in codes:
+                    df = aligned_data[code]
+                    pct = df.iloc[t].get('pct_chg', 0)
+                    if pd.notna(pct):
+                        bm_return += float(pct) / 100.0 * benchmark_weight
+                benchmark_value *= (1 + bm_return)
+                benchmark_values.append(benchmark_value)
+
+            # 记录权重
+            index_weights_history.append(dict(index_weights))
+            for code in codes:
+                index_avg_weight_sum[code] += index_weights.get(code, 0.0)
+
+            # 记录买卖事件
+            if prev_target_weights is not None:
+                prev_total = sum(prev_target_weights.values())
+                curr_total = sum(target_weights.values())
+                net_change = curr_total - prev_total
+                if net_change > 0.03:
+                    trade_events.append({
+                        'date': common_dates[t],
+                        'type': 'BUY',
+                        'net_change': net_change,
+                        'day_idx': t,
+                    })
+                elif net_change < -0.03:
+                    trade_events.append({
+                        'date': common_dates[t],
+                        'type': 'SELL',
+                        'net_change': net_change,
+                        'day_idx': t,
+                    })
+
+            prev_target_weights = target_weights
+
+        # 计算平均权重
+        index_avg_weights = {
+            code: index_avg_weight_sum[code] / n_days for code in codes
+        }
+
+        return {
+            'portfolio_values': portfolio_values,
+            'daily_returns': daily_returns_list,
+            'benchmark_values': benchmark_values,
+            'trade_events': trade_events,
+            'total_commission': total_commission,
+            'index_weights_history': index_weights_history,
+            'index_avg_weights': index_avg_weights,
+            'index_cumulative_contribution': index_cumulative_contribution,
+        }
+
+    # ==================== 绩效计算 ====================
+
+    def _calculate_metrics(self, sim_result: dict, common_dates: list,
+                           aligned_data: Dict[str, pd.DataFrame]) -> dict:
+        """计算组合绩效指标"""
+        pv = np.array(sim_result['portfolio_values'])
+        bv = np.array(sim_result['benchmark_values'])
+        dr = np.array(sim_result['daily_returns'])
+
+        trading_days = len(pv)
+        final_value = pv[-1]
+        bm_final = bv[-1]
+
+        # 总收益
+        total_return = (final_value - self.initial_capital) / self.initial_capital
+        bm_total_return = (bm_final - self.initial_capital) / self.initial_capital
+
+        # 年化收益
+        if trading_days > 1:
+            ann_return = (1 + total_return) ** (252 / trading_days) - 1
+            bm_ann = (1 + bm_total_return) ** (252 / trading_days) - 1
+        else:
+            ann_return = 0.0
+            bm_ann = 0.0
+
+        # 最大回撤
+        max_dd = self._max_drawdown(pv)
+        bm_max_dd = self._max_drawdown(bv)
+
+        # 夏普比率
+        sharpe = self._sharpe_ratio(dr)
+        bm_dr = np.diff(bv) / bv[:-1]
+        bm_dr = np.insert(bm_dr, 0, 0.0)
+        bm_sharpe = self._sharpe_ratio(bm_dr)
+
+        # 月度胜率
+        monthly_wr, months_positive, months_total = self._monthly_win_rate(
+            common_dates, sim_result['daily_returns']
+        )
+
+        # 每指数贡献
+        index_stats = {}
+        codes = list(aligned_data.keys())
+        for code in codes:
+            name = constant.TS_CODE_NAME_DICT.get(code, code)
+            df = aligned_data[code]
+            sig_col = self.signal_column if self.signal_column in df.columns else self.fallback_signal
+            n_buy = 0
+            n_sell = 0
+            n_hold = 0
+            if sig_col in df.columns:
+                n_buy = int((df[sig_col] == 'BUY').sum())
+                n_sell = int((df[sig_col] == 'SELL').sum())
+                n_hold = int((df[sig_col] == 'HOLD').sum())
+            index_stats[code] = {
+                'name': name,
+                'avg_weight': sim_result['index_avg_weights'].get(code, 0),
+                'contribution': sim_result['index_cumulative_contribution'].get(code, 0),
+                'buy_count': n_buy,
+                'sell_count': n_sell,
+                'hold_count': n_hold,
+            }
+
+        # 交易统计
+        buy_events = [e for e in sim_result['trade_events'] if e['type'] == 'BUY']
+        sell_events = [e for e in sim_result['trade_events'] if e['type'] == 'SELL']
+
+        commission_ratio = sim_result['total_commission'] / self.initial_capital * 100
+
+        return {
+            'total_return': round(total_return * 100, 2),
+            'annualized_return': round(ann_return * 100, 2),
+            'max_drawdown': round(max_dd * 100, 2),
+            'sharpe_ratio': round(sharpe, 2),
+            'monthly_win_rate': round(monthly_wr * 100, 1),
+            'months_positive': months_positive,
+            'months_total': months_total,
+            'final_value': round(final_value, 2),
+            'benchmark_total_return': round(bm_total_return * 100, 2),
+            'benchmark_annualized': round(bm_ann * 100, 2),
+            'benchmark_max_drawdown': round(bm_max_dd * 100, 2),
+            'benchmark_sharpe': round(bm_sharpe, 2),
+            'excess_return': round((total_return - bm_total_return) * 100, 2),
+            'trading_days': trading_days,
+            'total_commission': round(sim_result['total_commission'], 2),
+            'commission_ratio': round(commission_ratio, 2),
+            'buy_events_count': len(buy_events),
+            'sell_events_count': len(sell_events),
+            'index_stats': index_stats,
+            'start_date': common_dates[0].strftime('%Y-%m-%d'),
+            'end_date': common_dates[-1].strftime('%Y-%m-%d'),
+            'portfolio_values': sim_result['portfolio_values'],
+            'benchmark_values': sim_result['benchmark_values'],
+            'trade_events': sim_result['trade_events'],
+        }
+
+    @staticmethod
+    def _max_drawdown(values) -> float:
+        """计算最大回撤"""
+        values = np.array(values)
+        peak = np.maximum.accumulate(values)
+        drawdown = (values - peak) / peak
+        return abs(drawdown.min()) if len(drawdown) > 0 else 0.0
+
+    @staticmethod
+    def _sharpe_ratio(daily_returns, risk_free_rate: float = 0.02) -> float:
+        """计算夏普比率"""
+        dr = np.array(daily_returns)
+        if len(dr) < 2 or dr.std() == 0:
+            return 0.0
+        excess = dr.mean() - risk_free_rate / 252
+        return float(excess / dr.std() * np.sqrt(252))
+
+    @staticmethod
+    def _monthly_win_rate(dates: list, daily_returns: list) -> Tuple[float, int, int]:
+        """
+        计算月度胜率
+
+        Returns:
+            (win_rate, months_positive, months_total)
+        """
+        if len(dates) < 2:
+            return 0.0, 0, 0
+
+        # 按月分组
+        df = pd.DataFrame({'date': dates[:len(daily_returns)], 'return': daily_returns})
+        df['month'] = pd.to_datetime(df['date']).dt.to_period('M')
+        monthly = df.groupby('month')['return'].sum()
+
+        months_total = len(monthly)
+        months_positive = int((monthly > 0).sum())
+        win_rate = months_positive / months_total if months_total > 0 else 0.0
+
+        return win_rate, months_positive, months_total
+
+    # ==================== 图表生成 ====================
+
+    def _generate_chart(self,
+                        common_dates: list,
+                        sim_result: dict,
+                        metrics: dict,
+                        aligned_data: Dict[str, pd.DataFrame]) -> str:
+        """
+        生成双 Y 轴图表: 上证综指走势 vs 组合净值 + 买卖点
+
+        Returns:
+            str: 图表保存路径
+        """
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+        except ImportError:
+            print("  [WARNING] matplotlib 不可用，跳过图表生成")
+            return ''
+
+        # 中文字体
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
+
+        fig, ax1 = plt.subplots(figsize=(16, 10))
+
+        portfolio_values = sim_result['portfolio_values']
+        benchmark_values = sim_result['benchmark_values']
+        trade_events = sim_result['trade_events']
+
+        # 日期处理
+        plot_dates = [pd.to_datetime(d) for d in common_dates[:len(portfolio_values)]]
+
+        # 左 Y 轴: 上证综指
+        if self.SHANGHAI_CODE in aligned_data:
+            sh_df = aligned_data[self.SHANGHAI_CODE]
+            sh_close = sh_df['close'].values[:len(plot_dates)]
+            ax1.plot(plot_dates, sh_close, color='#AAAAAA', linewidth=1.2,
+                     linestyle='--', label='上证综指', alpha=0.7)
+            ax1.set_ylabel('上证综指', color='#666666', fontsize=12)
+            ax1.tick_params(axis='y', labelcolor='#666666')
+
+        ax1.set_xlabel('日期', fontsize=12)
+
+        # 右 Y 轴: 组合净值 + 基准
+        ax2 = ax1.twinx()
+        ax2.plot(plot_dates, portfolio_values, color='#E74C3C', linewidth=2.0,
+                 label='组合净值', zorder=5)
+        ax2.plot(plot_dates, benchmark_values, color='#3498DB', linewidth=1.5,
+                 linestyle='--', label='等权买入持有', alpha=0.8, zorder=4)
+        ax2.set_ylabel('组合净值 (元)', color='#333333', fontsize=12)
+        ax2.tick_params(axis='y', labelcolor='#333333')
+
+        # 买卖点标注
+        for event in trade_events:
+            idx = event['day_idx']
+            if idx < len(portfolio_values):
+                event_date = plot_dates[idx]
+                event_value = portfolio_values[idx]
+                if event['type'] == 'BUY':
+                    ax2.scatter(event_date, event_value, marker='^', color='#E74C3C',
+                                s=60, zorder=10, edgecolors='darkred', linewidth=0.5)
+                else:
+                    ax2.scatter(event_date, event_value, marker='v', color='#27AE60',
+                                s=60, zorder=10, edgecolors='darkgreen', linewidth=0.5)
+
+        # 标题
+        title = (f"组合回测: {metrics['start_date']} ~ {metrics['end_date']}  "
+                 f"(佣金 万{self.commission_rate * 10000:.1f})")
+        ax1.set_title(title, fontsize=14, fontweight='bold', pad=15)
+
+        # 绩效信息框
+        info_text = (
+            f"总收益: {metrics['total_return']:+.2f}%\n"
+            f"年化收益: {metrics['annualized_return']:+.2f}%\n"
+            f"夏普比率: {metrics['sharpe_ratio']:.2f}\n"
+            f"最大回撤: -{metrics['max_drawdown']:.2f}%\n"
+            f"月度胜率: {metrics['monthly_win_rate']:.1f}%\n"
+            f"超额收益: {metrics['excess_return']:+.2f}%\n"
+            f"(vs 等权买入持有)"
+        )
+        props = dict(boxstyle='round,pad=0.5', facecolor='wheat', alpha=0.85)
+        ax2.text(0.02, 0.97, info_text, transform=ax2.transAxes, fontsize=10,
+                 verticalalignment='top', bbox=props, family='monospace')
+
+        # 图例 - 合并两个轴
+        lines1, labels1 = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+
+        # 添加买卖标记到图例
+        buy_marker = plt.Line2D([0], [0], marker='^', color='w', markerfacecolor='#E74C3C',
+                                markersize=8, label='组合加仓')
+        sell_marker = plt.Line2D([0], [0], marker='v', color='w', markerfacecolor='#27AE60',
+                                 markersize=8, label='组合减仓')
+        all_handles = lines1 + lines2 + [buy_marker, sell_marker]
+        all_labels = labels1 + labels2 + ['组合加仓', '组合减仓']
+        ax2.legend(all_handles, all_labels, loc='upper right', fontsize=9)
+
+        # X 轴日期格式
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
+        ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=3))
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
+
+        ax1.grid(True, alpha=0.3)
+        fig.tight_layout()
+
+        # 保存
+        os.makedirs(self.chart_save_dir, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d')
+        filepath = os.path.join(self.chart_save_dir, f'portfolio_backtest_{timestamp}.png')
+        fig.savefig(filepath, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  图表已保存: {filepath}")
+        return filepath
+
+    # ==================== 报告输出 ====================
+
+    def _print_report(self, metrics: dict):
+        """控制台输出组合回测报告"""
+        print(f"\n{'=' * 70}")
+        print("  股票分析系统 - 组合回测报告")
+        print(f"  回测期间: {metrics['start_date']} ~ {metrics['end_date']} "
+              f"(共 {metrics['trading_days']} 交易日)")
+        print(f"  初始资金: {self.initial_capital:,.0f} | "
+              f"佣金: 万{self.commission_rate * 10000:.1f} | T+1执行")
+        print(f"{'=' * 70}")
+
+        print(f"\n  [组合绩效]")
+        print(f"    总收益率:       {metrics['total_return']:+.2f}%")
+        print(f"    年化收益率:     {metrics['annualized_return']:+.2f}%")
+        print(f"    最大回撤:       -{metrics['max_drawdown']:.2f}%")
+        print(f"    夏普比率:       {metrics['sharpe_ratio']:.2f}")
+        print(f"    月度胜率:       {metrics['monthly_win_rate']:.1f}% "
+              f"({metrics['months_positive']}/{metrics['months_total']} 个月)")
+        print(f"    期末净值:       {metrics['final_value']:,.2f}")
+
+        print(f"\n  [基准对比 (等权买入持有)]")
+        print(f"    基准收益:       {metrics['benchmark_total_return']:+.2f}%")
+        print(f"    超额收益:       {metrics['excess_return']:+.2f}%")
+        print(f"    基准最大回撤:   -{metrics['benchmark_max_drawdown']:.2f}%")
+        print(f"    基准夏普比率:   {metrics['benchmark_sharpe']:.2f}")
+
+        # 各指数贡献
+        index_stats = metrics.get('index_stats', {})
+        if index_stats:
+            print(f"\n  [各指数贡献]")
+            header = f"    {'指数':<10} {'平均权重':>8} {'累计贡献':>10} {'BUY':>5} {'SELL':>5} {'HOLD':>5}"
+            print(header)
+            print(f"    {'─' * 52}")
+            for code, stats in index_stats.items():
+                name = stats['name']
+                avg_w = stats['avg_weight'] * 100
+                contrib = stats['contribution'] * 100
+                print(f"    {name:<10} {avg_w:>7.1f}% {contrib:>+9.2f}% "
+                      f"{stats['buy_count']:>5} {stats['sell_count']:>5} {stats['hold_count']:>5}")
+
+        print(f"\n  [交易统计]")
+        print(f"    组合加仓次数:   {metrics['buy_events_count']} 次")
+        print(f"    组合减仓次数:   {metrics['sell_events_count']} 次")
+        print(f"    总手续费:       {metrics['total_commission']:,.2f} 元")
+        print(f"    手续费占比:     {metrics['commission_ratio']:.2f}%")
+
+        chart_path = metrics.get('chart_path', '')
+        if chart_path:
+            print(f"\n  [图表已保存]")
+            print(f"    {chart_path}")
+
+        print(f"\n{'=' * 70}")

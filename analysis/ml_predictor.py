@@ -208,6 +208,17 @@ class MLPredictor:
             result[f'feat_dev_ma{period}'] = result['deviation_rate'].apply(
                 lambda x: self._extract_json_field(x, f'ma_{period}'))
 
+        # --- V8: 市场状态特征 ---
+        if 'regime_trend_score' in result.columns:
+            result['feat_regime_trend_score'] = pd.to_numeric(
+                result['regime_trend_score'], errors='coerce').fillna(50)
+        if 'regime_vol_score' in result.columns:
+            result['feat_regime_vol_score'] = pd.to_numeric(
+                result['regime_vol_score'], errors='coerce').fillna(50)
+        if 'regime_sent_score' in result.columns:
+            result['feat_regime_sent_score'] = pd.to_numeric(
+                result['regime_sent_score'], errors='coerce').fillna(50)
+
         # 收集特征列名
         self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
 

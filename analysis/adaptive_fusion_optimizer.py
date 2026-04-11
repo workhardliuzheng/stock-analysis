@@ -293,16 +293,8 @@ class MetaLearner:
         df.loc[df['fused_score'] < 40, 'fused_signal'] = 'SELL'
         
         # 多指标共识投票: 4个独立指标各投一票(+1看涨/-1看跌)
-        # 当 >= 3 票同方向时，才修改信号(升级或降级一档)
-        # 这比单一均线更准确，需多重确认才触发，减少误判
+        # V8: 根据市场状态(regime)动态调整看涨/看跌阈值
         trend_override_count = 0
-        indicator_cols = {
-            'ma': ('close', 'ma_20', 'ma_50'),
-            'macd': ('macd_histogram',),
-            'rsi': ('rsi',),
-            'adx': ('plus_di', 'minus_di'),
-        }
-        # 检查所有必要列是否存在
         all_cols = ['close', 'ma_20', 'ma_50', 'macd_histogram', 'rsi', 'plus_di', 'minus_di']
         if all(c in df.columns for c in all_cols):
             close = pd.to_numeric(df['close'], errors='coerce')
@@ -314,39 +306,56 @@ class MetaLearner:
             minus_di = pd.to_numeric(df['minus_di'], errors='coerce')
             
             # 各指标投票: +1=看涨, -1=看跌, 0=中性
-            # 1) MA趋势: close > MA20 且 MA20 > MA50 → 看涨
             vote_ma = pd.Series(0, index=df.index)
             vote_ma[(close > ma20) & (ma20 > ma50)] = 1
             vote_ma[(close < ma20) & (ma20 < ma50)] = -1
             
-            # 2) MACD柱状图: > 0 → 看涨
             vote_macd = pd.Series(0, index=df.index)
             vote_macd[macd_hist > 0] = 1
             vote_macd[macd_hist < 0] = -1
             
-            # 3) RSI: > 50 → 看涨动量
             vote_rsi = pd.Series(0, index=df.index)
             vote_rsi[rsi > 50] = 1
             vote_rsi[rsi < 50] = -1
             
-            # 4) ADX方向: +DI > -DI → 看涨趋势
             vote_adx = pd.Series(0, index=df.index)
             vote_adx[plus_di > minus_di] = 1
             vote_adx[minus_di > plus_di] = -1
             
-            # 共识分数: -4 到 +4
             consensus = vote_ma + vote_macd + vote_rsi + vote_adx
             
-            # 非对称阈值: 快速躲跌、谨慎追涨
-            # 看涨升级: 需4票全部看涨(最严格，确认趋势后再加仓)
-            strong_bull = consensus >= 4
+            # V8: 根据regime动态调整共识阈值
+            has_regime = 'regime_label' in df.columns
+            if has_regime:
+                from analysis.market_regime_detector import MarketRegimeDetector
+                # 逐行根据regime设定阈值，然后向量化应用
+                bull_thresh = pd.Series(4, index=df.index)  # 默认严格
+                bear_thresh = pd.Series(-3, index=df.index)  # 默认
+                
+                for regime_label in df['regime_label'].unique():
+                    mask = df['regime_label'] == regime_label
+                    thresholds = MarketRegimeDetector.get_consensus_thresholds(regime_label)
+                    bull_thresh[mask] = thresholds['bull_thresh']
+                    bear_thresh[mask] = thresholds['bear_thresh']
+                
+                strong_bull = consensus >= bull_thresh
+                strong_bear = consensus <= bear_thresh
+                
+                # 统计regime分布
+                regime_counts = df['regime_label'].value_counts()
+                print(f"  V8 市场状态: {dict(regime_counts)}")
+            else:
+                # 向后兼容: 无regime时使用V7-7固定阈值
+                strong_bull = consensus >= 4
+                strong_bear = consensus <= -3
+            
+            # 看涨升级
             bull_sell = strong_bull & (df['fused_signal'] == 'SELL')
             bull_hold = strong_bull & (df['fused_signal'] == 'HOLD')
             df.loc[bull_sell, 'fused_signal'] = 'HOLD'
             df.loc[bull_hold, 'fused_signal'] = 'BUY'
             
-            # 看跌降级: 需3票看跌即可(更灵敏，快速减仓保护)
-            strong_bear = consensus <= -3
+            # 看跌降级
             bear_buy = strong_bear & (df['fused_signal'] == 'BUY')
             bear_hold = strong_bear & (df['fused_signal'] == 'HOLD')
             df.loc[bear_buy, 'fused_signal'] = 'HOLD'
@@ -354,7 +363,6 @@ class MetaLearner:
             
             trend_override_count = int(bull_sell.sum() + bull_hold.sum() + bear_buy.sum() + bear_hold.sum())
             
-            # 统计共识分布
             n_strong_bull = int(strong_bull.sum())
             n_strong_bear = int(strong_bear.sum())
             n_neutral = len(df) - n_strong_bull - n_strong_bear

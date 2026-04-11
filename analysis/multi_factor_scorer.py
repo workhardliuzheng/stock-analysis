@@ -48,6 +48,8 @@ class MultiFactorScorer:
         """
         计算多因子评分和买卖信号
 
+        V8: 如果 df 包含 regime_label 列，动态切换各因子权重
+
         Args:
             df: 包含技术指标的 DataFrame (需要已计算好所有指标)
 
@@ -56,6 +58,13 @@ class MultiFactorScorer:
         """
         result_df = df.copy()
 
+        # V8: 检查是否有regime信息
+        has_regime = 'regime_label' in result_df.columns
+        regime_weights_map = None
+        if has_regime:
+            from analysis.market_regime_detector import MarketRegimeDetector, FACTOR_WEIGHTS_BY_REGIME
+            regime_weights_map = FACTOR_WEIGHTS_BY_REGIME
+
         scores_list = []
         signals_list = []
         trend_states_list = []
@@ -63,8 +72,18 @@ class MultiFactorScorer:
 
         for i in range(len(result_df)):
             row = result_df.iloc[i]
-            # 传入 df 和当前索引，供需要历史数据的因子使用
-            scores, total_score = self._calculate_all_scores(row, result_df, i)
+
+            # V8: 根据当前行的regime动态选择权重
+            if has_regime and regime_weights_map:
+                regime_label = row.get('regime_label', None)
+                if regime_label and regime_label in regime_weights_map:
+                    current_weights = regime_weights_map[regime_label]
+                else:
+                    current_weights = self.weights
+            else:
+                current_weights = self.weights
+
+            scores, total_score = self._calculate_all_scores(row, result_df, i, current_weights)
             trend_state = self._determine_trend_state(row)
             signal, confidence = self._generate_signal(total_score, trend_state)
 
@@ -83,8 +102,17 @@ class MultiFactorScorer:
     # ==================== 综合评分 ====================
 
     def _calculate_all_scores(self, row: pd.Series, df: pd.DataFrame,
-                              idx: int) -> Tuple[dict, float]:
-        """计算所有因子评分并返回加权总分"""
+                              idx: int, weights: Optional[Dict[str, float]] = None) -> Tuple[dict, float]:
+        """计算所有因子评分并返回加权总分
+
+        Args:
+            row: 当前行数据
+            df: 完整 DataFrame
+            idx: 当前行索引
+            weights: V8动态权重，为None时使用self.weights
+        """
+        w = weights or self.weights
+
         trend_score = self._score_trend(row)
         momentum_score = self._score_momentum(row, df, idx)
         volume_score = self._score_volume(row, df, idx)
@@ -100,11 +128,11 @@ class MultiFactorScorer:
         }
 
         total_score = (
-            trend_score * self.weights['trend']
-            + momentum_score * self.weights['momentum']
-            + volume_score * self.weights['volume']
-            + valuation_score * self.weights['valuation']
-            + volatility_score * self.weights['volatility']
+            trend_score * w['trend']
+            + momentum_score * w['momentum']
+            + volume_score * w['volume']
+            + valuation_score * w['valuation']
+            + volatility_score * w['volatility']
         )
         total_score = max(0.0, min(100.0, total_score))
 
