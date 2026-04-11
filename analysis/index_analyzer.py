@@ -164,34 +164,6 @@ class IndexAnalyzer:
         print(f"正在生成 {self.name} 的最终信号...")
         self.data = self.signal_generator.generate(self.data)
         
-        # 止损信号应用
-        try:
-            from analysis.stop_loss_manager import StopLossManager, apply_stop_signals
-            print(f"正在应用 {self.name} 的止损信号...")
-            stop_manager = StopLossManager(
-                fixed_stop_loss=-10.0,  # 固定止损10%
-                trailing_stop_loss=-8.0,  # 追踪止损8%
-                time_stop_days=10,  # 时间止损10天
-                enabled=True
-            )
-            
-            # 创建position列用于止损
-            self.data['position'] = self.data['final_signal'].map(
-                {'BUY': 1, 'SELL': -1, 'HOLD': 0}
-            ).fillna(0)
-            
-            # 应用止损信号
-            self.data = apply_stop_signals(self.data, stop_manager)
-            
-            # 更新最终信号 (stopsignal = SELL时覆盖)
-            self.data['final_signal_stop'] = self.data['final_signal'].copy()
-            self.data.loc[self.data['stop_signal'] == 'SELL', 'final_signal_stop'] = 'SELL'
-            
-            print(f"  [OK] 止损信号应用完成")
-            
-        except Exception as e:
-            print(f"  [WARNING] 止损信号应用失败: {e}")
-        
         return self.data
     
     def _get_ml_predictor(self):
@@ -575,69 +547,28 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
             traceback.print_exc()
 
 
-def backtest_all_indices(ts_code: Optional[str] = None, strategy: str = 'all',
-                         include_ml: bool = True, auto_tune: bool = False,
-                         commission_rate: float = 0.00006,
-                         execution_timing: str = 'close', **kwargs):
+def portfolio_backtest(start_date: str = '20200101',
+                       commission_rate: float = 0.00006, **kwargs) -> dict:
     """
-    回测指数策略
-    
+    运行组合级回测
+
+    基于 V7-5 fused_signal 信号，按 position_advisor 动态分配权重，
+    对 8 个指数进行组合级仿真回测。
+
     Args:
-        ts_code: 指定指数代码，None 表示全部
-        strategy: 策略类型 factor/ml/combined/all
-        include_ml: 是否包含 ML 预测
-        auto_tune: 是否使用 Optuna 自动调优
-        commission_rate: 单边佣金率
-        execution_timing: 执行时机 open/close
-        **kwargs: 兼容 main.py 传入的其他参数 (model_type 等)
+        start_date: 回测起始日期 (YYYYMMDD)
+        commission_rate: 单边佣金率 (默认万0.6)
+        **kwargs: 兼容 main.py 传入的其他参数
+
+    Returns:
+        dict: 完整回测结果
     """
-    if ts_code:
-        codes = [ts_code]
-    else:
-        codes = list(constant.TS_CODE_NAME_DICT.keys())
-    
-    for code in codes:
-        try:
-            name = constant.TS_CODE_NAME_DICT.get(code, code)
-            print(f"\n{'#' * 60}")
-            print(f"  回测 {name} ({code})")
-            print(f"{'#' * 60}")
-            
-            analyzer = IndexAnalyzer(code)
-            analyzer.analyze(include_ml=include_ml, auto_tune=auto_tune)
-            
-            # 使用自定义回测参数
-            bt = Backtester(
-                commission_rate=commission_rate,
-                execution_timing=execution_timing
-            )
-            
-            if strategy == 'all':
-                strategies = {}
-                if 'factor_signal' in analyzer.data.columns:
-                    strategies['多因子策略'] = 'factor_signal'
-                if 'ml_signal' in analyzer.data.columns:
-                    strategies['ML策略'] = 'ml_signal'
-                if 'final_signal' in analyzer.data.columns:
-                    strategies['混合策略'] = 'final_signal'
-                results = bt.compare_strategies(analyzer.data, strategies)
-                bt.print_comparison(results, index_name=f"{name} ({code})")
-            else:
-                col_map = {
-                    'factor': 'factor_signal',
-                    'ml': 'ml_signal',
-                    'combined': 'final_signal',
-                }
-                col = col_map.get(strategy, 'final_signal')
-                if col in analyzer.data.columns:
-                    result = bt.run(analyzer.data, col)
-                    bt.print_report(result, index_name=f"{name} ({code})")
-                else:
-                    print(f"信号列 {col} 不存在")
-        except Exception as e:
-            print(f"回测 {code} 时出错: {e}")
-            import traceback
-            traceback.print_exc()
+    from analysis.portfolio_backtester import PortfolioBacktester
+    bt = PortfolioBacktester(
+        start_date=start_date,
+        commission_rate=commission_rate,
+    )
+    return bt.run()
 
 
 if __name__ == '__main__':

@@ -443,7 +443,7 @@ class MLPredictor:
         self._flip_signals = False
         if ic < -0.02:
             self._flip_signals = True
-            print(f"  [WARNING] IC={ic:.4f} < -0.02，启用信号反转模式（contrarian mode）")
+            print(f"  ⚠ IC={ic:.4f} < -0.02，启用信号反转模式（contrarian mode）")
             # 翻转预测值: 取反
             preds_all = np.where(np.isnan(preds_all), np.nan, -preds_all)
             # 重新计算翻转后的 IC

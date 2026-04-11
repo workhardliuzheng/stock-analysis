@@ -625,16 +625,8 @@ if __name__ == "__main__":
         run_daily_workflow(args.to_emails)
     
     elif args.mode == 'backtest':
-        from analysis.index_analyzer import backtest_all_indices
-        # 支持多个指数，用逗号分隔
-        codes = args.ts_code.split(',') if args.ts_code else None
-        backtest_all_indices(
-            ts_code=codes,
-            strategy=args.strategy,
-            include_ml=not args.no_ml,
-            auto_tune=args.auto_tune,
-            model_type=args.model_type,
+        from analysis.index_analyzer import portfolio_backtest
+        portfolio_backtest(
+            start_date=args.start_date,
             commission_rate=args.commission,
-            execution_timing=args.execution_timing,
-            feature_selection=args.feature_selection
         )

@@ -287,16 +287,85 @@ class MetaLearner:
             (df['fused_score'].max() - df['fused_score'].min()) * 100
         )
         
-        # 生成信号
+        # 生成基础信号
         df['fused_signal'] = 'HOLD'
         df.loc[df['fused_score'] >= 60, 'fused_signal'] = 'BUY'
         df.loc[df['fused_score'] < 40, 'fused_signal'] = 'SELL'
+        
+        # 多指标共识投票: 4个独立指标各投一票(+1看涨/-1看跌)
+        # 当 >= 3 票同方向时，才修改信号(升级或降级一档)
+        # 这比单一均线更准确，需多重确认才触发，减少误判
+        trend_override_count = 0
+        indicator_cols = {
+            'ma': ('close', 'ma_20', 'ma_50'),
+            'macd': ('macd_histogram',),
+            'rsi': ('rsi',),
+            'adx': ('plus_di', 'minus_di'),
+        }
+        # 检查所有必要列是否存在
+        all_cols = ['close', 'ma_20', 'ma_50', 'macd_histogram', 'rsi', 'plus_di', 'minus_di']
+        if all(c in df.columns for c in all_cols):
+            close = pd.to_numeric(df['close'], errors='coerce')
+            ma20 = pd.to_numeric(df['ma_20'], errors='coerce')
+            ma50 = pd.to_numeric(df['ma_50'], errors='coerce')
+            macd_hist = pd.to_numeric(df['macd_histogram'], errors='coerce')
+            rsi = pd.to_numeric(df['rsi'], errors='coerce')
+            plus_di = pd.to_numeric(df['plus_di'], errors='coerce')
+            minus_di = pd.to_numeric(df['minus_di'], errors='coerce')
+            
+            # 各指标投票: +1=看涨, -1=看跌, 0=中性
+            # 1) MA趋势: close > MA20 且 MA20 > MA50 → 看涨
+            vote_ma = pd.Series(0, index=df.index)
+            vote_ma[(close > ma20) & (ma20 > ma50)] = 1
+            vote_ma[(close < ma20) & (ma20 < ma50)] = -1
+            
+            # 2) MACD柱状图: > 0 → 看涨
+            vote_macd = pd.Series(0, index=df.index)
+            vote_macd[macd_hist > 0] = 1
+            vote_macd[macd_hist < 0] = -1
+            
+            # 3) RSI: > 50 → 看涨动量
+            vote_rsi = pd.Series(0, index=df.index)
+            vote_rsi[rsi > 50] = 1
+            vote_rsi[rsi < 50] = -1
+            
+            # 4) ADX方向: +DI > -DI → 看涨趋势
+            vote_adx = pd.Series(0, index=df.index)
+            vote_adx[plus_di > minus_di] = 1
+            vote_adx[minus_di > plus_di] = -1
+            
+            # 共识分数: -4 到 +4
+            consensus = vote_ma + vote_macd + vote_rsi + vote_adx
+            
+            # 非对称阈值: 快速躲跌、谨慎追涨
+            # 看涨升级: 需4票全部看涨(最严格，确认趋势后再加仓)
+            strong_bull = consensus >= 4
+            bull_sell = strong_bull & (df['fused_signal'] == 'SELL')
+            bull_hold = strong_bull & (df['fused_signal'] == 'HOLD')
+            df.loc[bull_sell, 'fused_signal'] = 'HOLD'
+            df.loc[bull_hold, 'fused_signal'] = 'BUY'
+            
+            # 看跌降级: 需3票看跌即可(更灵敏，快速减仓保护)
+            strong_bear = consensus <= -3
+            bear_buy = strong_bear & (df['fused_signal'] == 'BUY')
+            bear_hold = strong_bear & (df['fused_signal'] == 'HOLD')
+            df.loc[bear_buy, 'fused_signal'] = 'HOLD'
+            df.loc[bear_hold, 'fused_signal'] = 'SELL'
+            
+            trend_override_count = int(bull_sell.sum() + bull_hold.sum() + bear_buy.sum() + bear_hold.sum())
+            
+            # 统计共识分布
+            n_strong_bull = int(strong_bull.sum())
+            n_strong_bear = int(strong_bear.sum())
+            n_neutral = len(df) - n_strong_bull - n_strong_bear
+            print(f"  指标共识: 强看涨={n_strong_bull}天, 强看跌={n_strong_bear}天, 中性={n_neutral}天")
         
         # 信心度
         df['fused_confidence'] = np.abs(df['fused_score'] - 50) / 50
         
         print(f"[OK] V7-5 融合信号生成完成")
         print(f"  原始信号: BUY={len(df[df['factor_signal']=='BUY'])} SELL={len(df[df['factor_signal']=='SELL'])} HOLD={len(df[df['factor_signal']=='HOLD'])}")
+        print(f"  共识覆盖: {trend_override_count} 条信号被升/降级")
         print(f"  融合信号: BUY={len(df[df['fused_signal']=='BUY'])} SELL={len(df[df['fused_signal']=='SELL'])} HOLD={len(df[df['fused_signal']=='HOLD'])}")
         
         return df
