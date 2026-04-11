@@ -22,5 +22,16 @@ build/
 # data/
 # models/
 
+# Generated output files
+logs/
+reports/
+*.log
+
+# Temporary output files
+*.txt
+!requirements.txt
+daily_report.html
+run_output.log
+
 # Windows reserved file
 nul
