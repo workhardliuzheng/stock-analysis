@@ -47,13 +47,16 @@ class Backtester:
         self.slippage = slippage
         self.execution_timing = execution_timing
 
-    def run(self, df: pd.DataFrame, signal_column: str) -> dict:
+    def run(self, df: pd.DataFrame, signal_column: str,
+            position_series: Optional[pd.Series] = None) -> dict:
         """
         运行回测
 
         Args:
             df: 包含价格和信号列的 DataFrame
             signal_column: 信号列名 (值为 BUY/SELL/HOLD)
+            position_series: 外部预计算的仓位序列 (0~1 浮点, 已含 T+1 延迟)
+                             由 SmartPositionManager.generate_positions() 生成
 
         Returns:
             dict: 回测结果，包含绩效指标和交易明细
@@ -73,8 +76,14 @@ class Backtester:
         if len(bt_df) < 2:
             return self._empty_result()
 
-        # 生成仓位序列: 信号延迟1天执行
-        positions = self._generate_positions(bt_df[signal_column])
+        # 生成仓位序列
+        if position_series is not None:
+            positions = position_series.reset_index(drop=True)
+            # 确保长度匹配
+            if len(positions) != len(bt_df):
+                positions = positions.iloc[:len(bt_df)]
+        else:
+            positions = self._generate_positions(bt_df[signal_column])
 
         # 计算每日收益（含交易成本）
         if self.execution_timing == 'open' and 'open' in bt_df.columns:
@@ -224,7 +233,7 @@ class Backtester:
 
     def _extract_trades(self, bt_df: pd.DataFrame, positions: pd.Series,
                         signal_column: str) -> List[dict]:
-        """提取完整的买卖交易对（含手续费）"""
+        """提取完整的买卖交易对（含手续费, 支持连续仓位 0~1）"""
         trades = []
         entry_idx = None
         entry_price = None
@@ -232,15 +241,18 @@ class Backtester:
         cost_rate = self.commission_rate + self.slippage
 
         for i in range(1, len(positions)):
-            # 从空仓到持仓 = 买入
-            if positions.iloc[i] == 1.0 and positions.iloc[i - 1] == 0.0:
+            prev_pos = positions.iloc[i - 1]
+            curr_pos = positions.iloc[i]
+
+            # 从空仓到持仓 = 买入 (支持 0→0.3, 0→1.0 等)
+            if curr_pos > 0 and prev_pos <= 0:
                 entry_idx = i
                 if self.execution_timing == 'open' and 'open' in bt_df.columns:
                     entry_price = bt_df.iloc[i]['open']
                 else:
                     entry_price = bt_df.iloc[i]['close']
-            # 从持仓到空仓 = 卖出
-            elif positions.iloc[i] == 0.0 and positions.iloc[i - 1] == 1.0:
+            # 从持仓到空仓 = 卖出 (支持 0.5→0, 1.0→0 等)
+            elif curr_pos <= 0 and prev_pos > 0:
                 if entry_idx is not None and entry_price is not None:
                     if self.execution_timing == 'open' and 'open' in bt_df.columns:
                         exit_price = bt_df.iloc[i]['open']

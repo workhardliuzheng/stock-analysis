@@ -54,7 +54,8 @@ class PortfolioBacktester:
                  position_window: int = 30,
                  total_position_cap: float = 1.0,
                  min_rebalance_threshold: float = 0.001,
-                 chart_save_dir: str = 'records'):
+                 chart_save_dir: str = 'records',
+                 use_smart_position: bool = False):
         """
         Args:
             initial_capital: 初始资金
@@ -66,6 +67,7 @@ class PortfolioBacktester:
             total_position_cap: 总仓位上限
             min_rebalance_threshold: 最小调仓阈值 (权重变化低于此值不调仓)
             chart_save_dir: 图表保存目录
+            use_smart_position: 启用 V9 智能仓位管理
         """
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -76,6 +78,8 @@ class PortfolioBacktester:
         self.total_position_cap = total_position_cap
         self.min_rebalance_threshold = min_rebalance_threshold
         self.chart_save_dir = chart_save_dir
+        self.use_smart_position = use_smart_position
+        self._smart_managers = {}  # code -> SmartPositionManager
 
     def run(self) -> dict:
         """
@@ -92,7 +96,8 @@ class PortfolioBacktester:
         print(f"  起始日期: {self.start_date}")
         print(f"  信号策略: {self.signal_column}")
         print(f"  仓位上限: {self.total_position_cap * 100:.0f}%")
-        print(f"  仓位上限: {self.total_position_cap * 100:.0f}%")
+        if self.use_smart_position:
+            print(f"  仓位模式: V9 智能仓位管理")
         print("=" * 70)
 
         # 1. 加载所有指数数据
@@ -101,6 +106,13 @@ class PortfolioBacktester:
         if len(index_data) < 2:
             print("[ERROR] 可用指数不足，无法进行组合回测")
             return {}
+
+        # 初始化 V9 SmartPositionManager (每指数一个实例)
+        if self.use_smart_position:
+            from analysis.smart_position_manager import SmartPositionManager
+            for code in index_data.keys():
+                self._smart_managers[code] = SmartPositionManager()
+            print(f"  V9 智能仓位管理: 已为 {len(self._smart_managers)} 个指数创建管理器")
 
         # 2. 日期对齐
         print(f"\n[2/5] 日期对齐... (共 {len(index_data)} 个指数)")
@@ -321,6 +333,60 @@ class PortfolioBacktester:
 
         return self._normalize_weights(weights)
 
+    def _compute_smart_weights(self,
+                               aligned_data: Dict[str, pd.DataFrame],
+                               day_idx: int,
+                               signal_col: str,
+                               codes: list) -> Dict[str, float]:
+        """
+        V9: 使用 SmartPositionManager 计算每指数权重
+
+        每个指数的 SmartPositionManager 独立 step(),
+        输出 raw_position (0~1)。raw_position 直接作为权重基数，
+        由 _normalize_weights 负责在总和超限时等比缩放。
+        这样活跃指数能获得更多权重，非活跃指数不占用额度。
+        """
+        from analysis.smart_position_manager import _safe_float, _calc_confidence
+
+        n_codes = len(codes)
+        target_weights = {}
+
+        for code in codes:
+            df = aligned_data[code]
+            row = df.iloc[day_idx]
+
+            # 构造 row_data
+            confidence = 0.5
+            if 'fused_confidence' in df.columns:
+                confidence = _safe_float(row.get('fused_confidence', 0.5), 0.5)
+            elif 'fused_score' in df.columns:
+                score = _safe_float(row.get('fused_score', 50.0), 50.0)
+                confidence = abs(score - 50.0) / 50.0
+            elif 'factor_score' in df.columns:
+                score = _safe_float(row.get('factor_score', 50.0), 50.0)
+                confidence = abs(score - 50.0) / 50.0
+
+            row_data = {
+                'fused_signal': row.get(signal_col, 'HOLD'),
+                'fused_confidence': confidence,
+                'rsi': _safe_float(row.get('rsi', 50.0), 50.0),
+                'atr': _safe_float(row.get('atr', 0.0), 0.0),
+                'close': _safe_float(row.get('close', 0.0), 0.0),
+                'regime_label': row.get('regime_label', 'SIDEWAYS'),
+            }
+
+            mgr = self._smart_managers.get(code)
+            if mgr is not None:
+                raw_position = mgr.step(row_data)
+            else:
+                raw_position = 0.0
+
+            # raw_position 直接作为权重，不除以 n_codes
+            # 活跃指数获得更多资金，空仓指数不占用额度
+            target_weights[code] = raw_position
+
+        return self._normalize_weights(target_weights)
+
     def _normalize_weights(self, weights: Dict[str, float]) -> Dict[str, float]:
         """归一化权重到 total_position_cap"""
         total = sum(weights.values())
@@ -375,7 +441,11 @@ class PortfolioBacktester:
 
         for t in range(n_days):
             # 计算今日目标权重
-            target_weights = self._compute_daily_weights(aligned_data, t, signal_col)
+            if self.use_smart_position and self._smart_managers:
+                target_weights = self._compute_smart_weights(
+                    aligned_data, t, signal_col, codes)
+            else:
+                target_weights = self._compute_daily_weights(aligned_data, t, signal_col)
 
             # T+1 延迟: 执行昨日的目标权重
             if t > 0 and prev_target_weights is not None:

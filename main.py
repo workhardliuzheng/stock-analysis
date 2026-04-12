@@ -592,6 +592,8 @@ if __name__ == "__main__":
                         help='启用 Optuna 超参数自动调优 (signal/backtest模式，耗时较长)')
     parser.add_argument('--feature-selection', action='store_true',
                         help='启用特征重要性筛选 (signal/backtest模式)')
+    parser.add_argument('--smart-position', action='store_true',
+                        help='启用V9智能仓位管理 (backtest模式)')
     args = parser.parse_args()
     
     if args.mode == 'guide':
@@ -629,4 +631,5 @@ if __name__ == "__main__":
         portfolio_backtest(
             start_date=args.start_date,
             commission_rate=args.commission,
+            use_smart_position=args.smart_position,
         )
