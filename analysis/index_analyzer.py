@@ -556,7 +556,9 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
 
 
 def portfolio_backtest(start_date: str = '20200101',
-                       commission_rate: float = 0.00006, **kwargs) -> dict:
+                       commission_rate: float = 0.00006,
+                       use_smart_position: bool = False,
+                       **kwargs) -> dict:
     """
     运行组合级回测
 
@@ -566,6 +568,7 @@ def portfolio_backtest(start_date: str = '20200101',
     Args:
         start_date: 回测起始日期 (YYYYMMDD)
         commission_rate: 单边佣金率 (默认万0.6)
+        use_smart_position: 启用 V10 智能仓位管理
         **kwargs: 兼容 main.py 传入的其他参数
 
     Returns:
@@ -575,6 +578,7 @@ def portfolio_backtest(start_date: str = '20200101',
     bt = PortfolioBacktester(
         start_date=start_date,
         commission_rate=commission_rate,
+        use_smart_position=use_smart_position,
     )
     return bt.run()
 

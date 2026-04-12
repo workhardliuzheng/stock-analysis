@@ -80,6 +80,9 @@ class PortfolioBacktester:
         self.chart_save_dir = chart_save_dir
         self.use_smart_position = use_smart_position
         self._smart_managers = {}  # code -> SmartPositionManager
+        # V10: 组合回撤熔断
+        self._portfolio_peak: float = initial_capital
+        self._drawdown_state: str = 'NORMAL'
 
     def run(self) -> dict:
         """
@@ -366,6 +369,13 @@ class PortfolioBacktester:
                 score = _safe_float(row.get('factor_score', 50.0), 50.0)
                 confidence = abs(score - 50.0) / 50.0
 
+            # V10: 获取预计算的背离信号
+            div_signal = None
+            if hasattr(self, '_divergence_cache') and code in self._divergence_cache:
+                div_series = self._divergence_cache[code]
+                if day_idx < len(div_series):
+                    div_signal = div_series.iloc[day_idx]
+
             row_data = {
                 'fused_signal': row.get(signal_col, 'HOLD'),
                 'fused_confidence': confidence,
@@ -373,6 +383,10 @@ class PortfolioBacktester:
                 'atr': _safe_float(row.get('atr', 0.0), 0.0),
                 'close': _safe_float(row.get('close', 0.0), 0.0),
                 'regime_label': row.get('regime_label', 'SIDEWAYS'),
+                # V10 新增
+                'vol': _safe_float(row.get('vol', 0.0), 0.0),
+                'vol_ma_10': _safe_float(row.get('vol_ma_10', 0.0), 0.0),
+                'divergence_signal': div_signal,
             }
 
             mgr = self._smart_managers.get(code)
@@ -396,6 +410,62 @@ class PortfolioBacktester:
             return weights
         factor = self.total_position_cap / total
         return {code: w * factor for code, w in weights.items()}
+
+    # ==================== V10: 组合回撤熔断 ====================
+
+    # 状态等级 (用于比较)
+    _DRAWDOWN_RANKS = {'NORMAL': 0, 'CAUTION': 1, 'SEVERE': 2, 'EMERGENCY': 3}
+    _DRAWDOWN_MULTIPLIER = {'NORMAL': 1.0, 'CAUTION': 0.7, 'SEVERE': 0.5, 'EMERGENCY': 0.0}
+
+    def _apply_drawdown_circuit_breaker(self, portfolio_value: float,
+                                        target_weights: Dict[str, float]) -> Dict[str, float]:
+        """
+        V10: 组合回撤三级熔断
+
+        根据组合净值相对峰值的回撤幅度，动态缩减所有权重。
+        使用滞后恢复阈值防止在边界处频繁切换。
+
+        熔断级别:
+            NORMAL   -> CAUTION  : 回撤 < -20%  (权重 * 0.7)
+            CAUTION  -> SEVERE   : 回撤 < -30%  (权重 * 0.5)
+            SEVERE   -> EMERGENCY: 回撤 < -40%  (全部清仓)
+
+        恢复条件 (滞后):
+            EMERGENCY -> SEVERE  : 回撤 > -25%
+            SEVERE    -> CAUTION : 回撤 > -15%
+            CAUTION   -> NORMAL  : 回撤 > -8%
+        """
+        self._portfolio_peak = max(self._portfolio_peak, portfolio_value)
+        if self._portfolio_peak <= 0:
+            return target_weights
+
+        drawdown = (portfolio_value - self._portfolio_peak) / self._portfolio_peak
+
+        prev_state = self._drawdown_state
+        curr_rank = self._DRAWDOWN_RANKS.get(self._drawdown_state, 0)
+
+        # 状态升级 (更严格): 只能升级不能跳过
+        if drawdown < -0.40 and curr_rank < 3:
+            self._drawdown_state = 'EMERGENCY'
+        elif drawdown < -0.30 and curr_rank < 2:
+            self._drawdown_state = 'SEVERE'
+        elif drawdown < -0.20 and curr_rank < 1:
+            self._drawdown_state = 'CAUTION'
+
+        # 状态降级 (恢复): 每次只降一级，且使用更宽松的阈值
+        if self._drawdown_state == 'EMERGENCY' and drawdown > -0.25:
+            self._drawdown_state = 'SEVERE'
+        elif self._drawdown_state == 'SEVERE' and drawdown > -0.15:
+            self._drawdown_state = 'CAUTION'
+        elif self._drawdown_state == 'CAUTION' and drawdown > -0.08:
+            self._drawdown_state = 'NORMAL'
+
+        multiplier = self._DRAWDOWN_MULTIPLIER.get(self._drawdown_state, 1.0)
+
+        if multiplier >= 1.0:
+            return target_weights
+
+        return {code: w * multiplier for code, w in target_weights.items()}
 
     # ==================== 逐日仿真 ====================
 
@@ -423,6 +493,18 @@ class PortfolioBacktester:
         portfolio_value = self.initial_capital
         index_weights = {code: 0.0 for code in codes}
         prev_target_weights = None
+
+        # V10: 重置熔断状态
+        self._portfolio_peak = self.initial_capital
+        self._drawdown_state = 'NORMAL'
+
+        # V10: 预计算背离信号 (每个指数独立)
+        self._divergence_cache = {}
+        if self.use_smart_position:
+            from analysis.smart_position_manager import SmartPositionManager
+            for code in codes:
+                self._divergence_cache[code] = SmartPositionManager._detect_divergences(
+                    aligned_data[code])
 
         portfolio_values = [portfolio_value]
         daily_returns_list = [0.0]
@@ -514,6 +596,11 @@ class PortfolioBacktester:
                         'net_change': net_change,
                         'day_idx': t,
                     })
+
+            # V10: 组合回撤熔断 (暂时禁用 - regime转换+背离已提供足够保护)
+            # if t > 0 and self.use_smart_position:
+            #     target_weights = self._apply_drawdown_circuit_breaker(
+            #         portfolio_value, target_weights)
 
             prev_target_weights = target_weights
 
