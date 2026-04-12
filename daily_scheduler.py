@@ -62,12 +62,7 @@ class DailyScheduler:
             '科创板50': '000688.SH',
             '沪深300': '000300.SH',
             '中证500': '000905.SH',
-            '中证1000': '000852.SH',
-            '恒生指数': '.HSI',
-            '道琼斯工业': '.DJI',
-            '纳斯达克综合': '.IXIC',
-            '标普500': '.SPX',
-            '比特币': 'BTC-USD'
+            '中证1000': '000852.SH'
         }
     
     def sync_latest_data(self):
@@ -80,11 +75,9 @@ class DailyScheduler:
                 try:
                     logger.info('[OK] 同步 ' + index_name + ' (' + code + ')...')
                     
-                    # SixtyIndexAnalysis.__init__() 不接受参数，先创建实例
-                    analysis = SixtyIndexAnalysis()
-                    # 直接调用 additional_data，它会同步所有指数
-                    start_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
-                    analysis.additional_data(start_date)
+                    analysis = SixtyIndexAnalysis(code)
+                    # 同步数据到MySQL
+                    analysis.sync_data()
                     
                     logger.info('[OK] ' + index_name + ' 数据同步完成')
                 except Exception as e:
@@ -109,8 +102,13 @@ class DailyScheduler:
             try:
                 logger.info('[OK] 分析 ' + index_name + ' (' + code + ')...')
                 
+                # 1. 同步最新数据
+                logger.info('[OK] 同步最新数据...')
+                sync_analysis = SixtyIndexAnalysis()
+                start_date = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
+                sync_analysis.additional_data(start_date)
+                
                 # 2. 使用IndexAnalyzer进行完整分析
-                # 注意：数据已在sync_latest_data()中同步过，无需重复同步
                 logger.info('[OK] 执行完整技术分析...')
                 analyzer = IndexAnalyzer(ts_code=code)
                 analysis_df = analyzer.analyze(include_ml=True)
