@@ -49,18 +49,21 @@ class PortfolioBacktester:
                  initial_capital: float = 100000,
                  commission_rate: float = 0.00006,
                  start_date: str = '20200101',
+                 end_date: Optional[str] = None,
                  signal_column: str = 'fused_signal',
                  fallback_signal: str = 'final_signal',
                  position_window: int = 30,
                  total_position_cap: float = 1.0,
                  min_rebalance_threshold: float = 0.001,
                  chart_save_dir: str = 'records',
-                 use_smart_position: bool = False):
+                 use_smart_position: bool = False,
+                 cross_index_consensus_enabled: bool = True):
         """
         Args:
             initial_capital: 初始资金
             commission_rate: 单边佣金率 (万0.6 = 0.00006)
             start_date: 回测起始日期 (YYYYMMDD)
+            end_date: 回测结束日期 (YYYYMMDD)，默认为当前日期
             signal_column: 主信号列名
             fallback_signal: 回退信号列名
             position_window: 滑动窗口天数 (用于计算信号分布)
@@ -68,10 +71,12 @@ class PortfolioBacktester:
             min_rebalance_threshold: 最小调仓阈值 (权重变化低于此值不调仓)
             chart_save_dir: 图表保存目录
             use_smart_position: 启用 V9 智能仓位管理
+            cross_index_consensus_enabled: V12 启用跨指数趋势共识
         """
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
         self.start_date = start_date
+        self.end_date = end_date
         self.signal_column = signal_column
         self.fallback_signal = fallback_signal
         self.position_window = position_window
@@ -79,10 +84,13 @@ class PortfolioBacktester:
         self.min_rebalance_threshold = min_rebalance_threshold
         self.chart_save_dir = chart_save_dir
         self.use_smart_position = use_smart_position
+        self.cross_index_consensus_enabled = cross_index_consensus_enabled
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
         self._portfolio_peak: float = initial_capital
         self._drawdown_state: str = 'NORMAL'
+        # V12: 跨指数共识EMA状态
+        self._consensus_ema: float = 0.0
 
     def run(self) -> dict:
         """
@@ -97,10 +105,13 @@ class PortfolioBacktester:
         print(f"  初始资金: {self.initial_capital:,.0f}")
         print(f"  佣金: 万{self.commission_rate * 10000:.1f} (单边)")
         print(f"  起始日期: {self.start_date}")
+        print(f"  结束日期: {self.end_date or '至今'}")
         print(f"  信号策略: {self.signal_column}")
         print(f"  仓位上限: {self.total_position_cap * 100:.0f}%")
         if self.use_smart_position:
             print(f"  仓位模式: V9 智能仓位管理")
+        if self.cross_index_consensus_enabled:
+            print(f"  V12跨指数共识: 启用")
         print("=" * 70)
 
         # 1. 加载所有指数数据
@@ -154,7 +165,14 @@ class PortfolioBacktester:
     # ==================== 数据加载 ====================
 
     def _load_all_indices(self) -> Dict[str, pd.DataFrame]:
-        """加载所有指数数据并生成信号"""
+        """
+        加载所有指数数据并生成信号
+
+        关键设计: 信号生成与回测区间解耦
+        - 始终使用全量历史数据生成信号 (从 HISTORY_START_DATE_MAP 开始)
+        - 确保 ML 模型有充足训练数据，fused_score 归一化稳定
+        - 回测区间仅控制交易仿真的起止时间 (在 _align_dates 中截取)
+        """
         from analysis.index_analyzer import IndexAnalyzer
 
         index_data = {}
@@ -165,7 +183,9 @@ class PortfolioBacktester:
             print(f"  [{i+1}/{len(codes)}] {name} ({code})...", end=" ", flush=True)
 
             try:
-                analyzer = IndexAnalyzer(code, start_date=self.start_date)
+                # 始终使用全量历史数据生成信号，不受回测 start_date 限制
+                full_start = constant.HISTORY_START_DATE_MAP.get(code, '20100101')
+                analyzer = IndexAnalyzer(code, start_date=full_start, end_date=self.end_date)
 
                 if len(analyzer.data) < 100:
                     print(f"数据不足 ({len(analyzer.data)} 行)，跳过")
@@ -175,16 +195,27 @@ class PortfolioBacktester:
 
                 # 尝试生成 fused_signal
                 df = self._add_fused_signal(analyzer.data)
-                index_data[code] = df
 
-                n_rows = len(df)
-                sig_col = self.signal_column if self.signal_column in df.columns else self.fallback_signal
-                if sig_col in df.columns:
-                    n_buy = (df[sig_col] == 'BUY').sum()
-                    n_sell = (df[sig_col] == 'SELL').sum()
-                    print(f"OK ({n_rows} 行, BUY={n_buy}, SELL={n_sell})")
+                # 截取回测区间: 信号已在全量数据上生成，现在只保留回测范围
+                df['trade_date'] = pd.to_datetime(df['trade_date'])
+                bt_start = pd.to_datetime(self.start_date)
+                df_backtest = df[df['trade_date'] >= bt_start].copy().reset_index(drop=True)
+
+                if len(df_backtest) < 50:
+                    print(f"回测区间数据不足 ({len(df_backtest)} 行)，跳过")
+                    continue
+
+                index_data[code] = df_backtest
+
+                n_rows = len(df_backtest)
+                n_full = len(df)
+                sig_col = self.signal_column if self.signal_column in df_backtest.columns else self.fallback_signal
+                if sig_col in df_backtest.columns:
+                    n_buy = (df_backtest[sig_col] == 'BUY').sum()
+                    n_sell = (df_backtest[sig_col] == 'SELL').sum()
+                    print(f"OK (全量{n_full}行, 回测{n_rows}行, BUY={n_buy}, SELL={n_sell})")
                 else:
-                    print(f"OK ({n_rows} 行, 信号列缺失)")
+                    print(f"OK (全量{n_full}行, 回测{n_rows}行, 信号列缺失)")
 
             except Exception as e:
                 print(f"失败: {e}")
@@ -387,6 +418,8 @@ class PortfolioBacktester:
                 'vol': _safe_float(row.get('vol', 0.0), 0.0),
                 'vol_ma_10': _safe_float(row.get('vol_ma_10', 0.0), 0.0),
                 'divergence_signal': div_signal,
+                # V11 新增
+                'ma_50': _safe_float(row.get('ma_50', 0.0), 0.0),
             }
 
             mgr = self._smart_managers.get(code)
@@ -467,6 +500,89 @@ class PortfolioBacktester:
 
         return {code: w * multiplier for code, w in target_weights.items()}
 
+    # ==================== V12: 跨指数趋势共识 ====================
+
+    # 缩放系数表: (平滑后n_below_ma50阈值, 缩放系数) - R4柔化版
+    _CONSENSUS_SCALING = [
+        (7, 0.50),
+        (6, 0.70),
+        (5, 0.85),
+    ]
+
+    def _apply_cross_index_consensus(self,
+                                     aligned_data: Dict[str, pd.DataFrame],
+                                     day_idx: int,
+                                     target_weights: Dict[str, float]) -> Dict[str, float]:
+        """
+        V12: 跨指数趋势共识过滤
+
+        当多数指数同时跌破MA50时, 缩减整个组合仓位。
+        使用非对称EMA平滑: 快速进入保护, 慢速恢复。
+
+        与SmartPositionManager Phase 7互补:
+        - Phase 7: 单指数close < MA50时限制该指数仓位
+        - L1: 多数指数同时走弱时缩减整个组合
+
+        Args:
+            aligned_data: 对齐后的各指数数据
+            day_idx: 当前日序号
+            target_weights: 当前目标权重
+
+        Returns:
+            缩放后的目标权重
+        """
+        if not self.cross_index_consensus_enabled:
+            return target_weights
+
+        codes = list(aligned_data.keys())
+
+        # 统计低于MA50/MA20的指数数
+        n_below_ma50 = 0
+        n_below_ma20 = 0
+        n_valid = 0
+
+        for code in codes:
+            df = aligned_data[code]
+            row = df.iloc[day_idx]
+
+            close = pd.to_numeric(row.get('close', None), errors='coerce')
+            ma50 = pd.to_numeric(row.get('ma_50', None), errors='coerce')
+            ma20 = pd.to_numeric(row.get('ma_20', None), errors='coerce')
+
+            if pd.notna(close) and pd.notna(ma50) and ma50 > 0:
+                n_valid += 1
+                if close < ma50:
+                    n_below_ma50 += 1
+
+            if pd.notna(close) and pd.notna(ma20) and ma20 > 0:
+                if close < ma20:
+                    n_below_ma20 += 1
+
+        # 有效指数不足时跳过
+        if n_valid < 6:
+            return target_weights
+
+        # 非对称EMA平滑 - R4: 放慢进入速度, 避免短期修正误触发
+        if n_below_ma50 > self._consensus_ema:
+            # 进入保护: 中速响应 (~7日半衰期)
+            alpha = 0.2
+        else:
+            # 恢复: 慢速退出
+            alpha = 0.1
+        self._consensus_ema = alpha * n_below_ma50 + (1 - alpha) * self._consensus_ema
+
+        # 根据平滑后的计数确定缩放系数
+        scaling = 1.0
+        for threshold, scale in self._CONSENSUS_SCALING:
+            if self._consensus_ema >= threshold:
+                scaling = scale
+                break
+
+        if scaling >= 1.0:
+            return target_weights
+
+        return {code: w * scaling for code, w in target_weights.items()}
+
     # ==================== 逐日仿真 ====================
 
     def _simulate(self,
@@ -498,6 +614,9 @@ class PortfolioBacktester:
         self._portfolio_peak = self.initial_capital
         self._drawdown_state = 'NORMAL'
 
+        # V12: 重置跨指数共识EMA
+        self._consensus_ema = 0.0
+
         # V10: 预计算背离信号 (每个指数独立)
         self._divergence_cache = {}
         if self.use_smart_position:
@@ -528,6 +647,11 @@ class PortfolioBacktester:
                     aligned_data, t, signal_col, codes)
             else:
                 target_weights = self._compute_daily_weights(aligned_data, t, signal_col)
+
+            # V12: 跨指数趋势共识过滤
+            if self.cross_index_consensus_enabled:
+                target_weights = self._apply_cross_index_consensus(
+                    aligned_data, t, target_weights)
 
             # T+1 延迟: 执行昨日的目标权重
             if t > 0 and prev_target_weights is not None:

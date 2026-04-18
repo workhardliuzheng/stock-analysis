@@ -1,139 +1,68 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-邮件通知工具 - 免费、稳定、无需机器人权限
+邮件通知工具
 
-支持:
-- Gmail, QQ邮箱, 163邮箱, 网易企业邮等
-- SSL/TLS加密连接
-- HTML格式邮件
-- 附件支持
+配置统一从 config.yaml 的 email 节读取。
+底层使用 report.email_sender.EmailSender 实现。
 
-配置:
-- 修改 FEISHU_EMAIL_RECIPIENT 为您接收通知的邮箱
-- 修改 SMTP 配置为您邮箱的SMTP服务器
-
-免费方案，无需飞书机器人权限，10分钟即可配置完成！
+用法:
+    python email_client.py --test           # 测试邮件发送
+    python email_client.py --send-report "内容"  # 发送报告
 """
 
-import smtplib
-import ssl
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.header import Header
 import sys
 import os
+from datetime import datetime
 
-# 邮件配置 - 网易邮箱
-SMTP_SERVER = "smtp.163.com"    # 网易邮箱SMTP服务器
-SMTP_PORT = 465                 # SSL端口
-SMTP_USER = "workhardliuzheng@163.com"  # 您的网易邮箱
-SMTP_PASSWORD = "UBnHVwGi2QG3JEA2"  # 客户端授权码
-FEISHU_EMAIL_RECIPIENT = "workhardliuzheng@163.com"  # 收件邮箱
+# 确保项目根目录在 path 中
+_project_root = os.path.dirname(os.path.abspath(__file__))
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
+from report.email_sender import EmailSender
+from util.config_loader import get_email_config
 
 
 def send_email(subject, content, recipients=None):
     """
-    发送邮件通知
-    
+    发送邮件通知 (向后兼容接口)
+
     参数:
         subject: 邮件标题
-        content: 邮件内容（支持HTML格式）
-        recipients: 收件人列表（默认使用FEISHU_EMAIL_RECIPIENT）
-    
+        content: 邮件内容 (支持 HTML 格式)
+        recipients: 收件人列表 (默认使用 config.yaml 中的 default_recipients)
+
     返回:
         bool: 发送成功/失败
     """
-    # 使用配置的收件人或传入的收件人
-    if recipients is None:
-        recipients = [FEISHU_EMAIL_RECIPIENT]
-    
-    # 检查配置
-    if not SMTP_USER or not SMTP_PASSWORD:
-        print("[ERROR] 邮件SMTP配置不完整")
-        print("  SMTP_USER: " + (SMTP_USER or "未配置"))
-        print("  SMTP_PASSWORD: " + ("*" * len(SMTP_PASSWORD) if SMTP_PASSWORD else "未配置"))
-        return False
-    
-    if not recipients or not recipients[0]:
-        print("[ERROR] 收件人邮箱未配置")
-        return False
-    
-    # 创建邮件
-    message = MIMEMultipart('alternative')
-    message['Subject'] = Header(subject, 'utf-8')
-    message['From'] = SMTP_USER
-    message['To'] = ','.join(recipients)
-    
-    # 添加HTML内容
+    sender = EmailSender()
+
+    # 包装 HTML 内容
     html_content = f"""
     <html>
     <body>
         <div style="font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto;">
-            <h2 style="color: #1a73e8;">📊 A股投资顾问通知</h2>
-            
+            <h2 style="color: #1a73e8;">A股投资顾问通知</h2>
+
             <div style="background-color: #f5f5f5; padding: 20px; border-radius: 8px; margin: 20px 0;">
                 {content}
             </div>
-            
+
             <hr style="border: none; border-top: 1px solid #ddd;">
-            
+
             <p style="color: #666; font-size: 12px; text-align: center;">
                 <br>
-                🔔 本邮件由A股投资顾问系统自动发送<br>
-                ⏰ 发送时间: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br>
-                📧 邮件工具: email_client.py
+                本邮件由A股投资顾问系统自动发送<br>
+                发送时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}<br>
             </p>
         </div>
     </body>
     </html>
     """
-    
-    part = MIMEText(html_content, 'html', 'utf-8')
-    message.attach(part)
-    
-    # 发送邮件
-    try:
-        print(f"[OK] 正在连接SMTP服务器: {SMTP_SERVER}:{SMTP_PORT}")
-        
-        # 网易邮箱SSL端口465需要使用SMTP_SSL
-        if SMTP_PORT == 465:
-            server = smtplib.SMTP_SSL(SMTP_SERVER, SMTP_PORT, timeout=10)
-        else:
-            server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=10)
-            server.starttls(context=ssl.create_default_context())
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        
-        # 发送邮件
-        server.sendmail(SMTP_USER, recipients, message.as_string())
-        server.quit()
-        
-        print("[OK] 邮件发送成功！")
-        print(f"  发件人: {SMTP_USER}")
-        print("  收件人: " + recipients[0])
-        print(f"  主题: {subject}")
-        
-        return True
-        
-    except smtplib.SMTPAuthenticationError:
-        print("[ERROR] SMTP认证失败")
-        print("  请检查:")
-        print("  1. 邮箱密码/授权码是否正确")
-        print("  2. 是否启用了SMTP服务")
-        print("  3. Gmail用户需要开启'允许不够安全的应用'或使用应用专用密码")
-        return False
-        
-    except (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected) as e:
-        print("[ERROR] SMTP连接失败: " + str(e))
-        print("  请检查:")
-        print("  1. SMTP服务器地址和端口是否正确")
-        print("  2. 网络连接是否正常")
-        print("  3. 网易邮箱SSL端口应使用465")
-        return False
-        
-    except Exception as e:
-        print(f"[ERROR] 邮件发送异常: {e}")
-        return False
+
+    success, msg = sender.send(subject, html_content, to_emails=recipients)
+    return success
 
 
 def test_email():
@@ -141,63 +70,55 @@ def test_email():
     print("=" * 60)
     print("[OK] 测试邮件发送...")
     print("=" * 60)
-    
-    # 检查配置
-    if not SMTP_USER or not SMTP_PASSWORD:
-        print("[ERROR] 邮件SMTP配置不完整")
-        print("  请编辑 email_client.py 文件，配置以下变量:")
-        print("    SMTP_USER = 'your_email@gmail.com'")
-        print("    SMTP_PASSWORD = 'your_password_or_app_password'")
-        print("    FEISHU_EMAIL_RECIPIENT = 'your_email@gmail.com'")
+
+    cfg = get_email_config()
+    smtp_user = cfg.get('smtp_user', '')
+    smtp_server = cfg.get('smtp_server', '')
+    smtp_port = cfg.get('smtp_port', 465)
+    recipients = cfg.get('default_recipients', [])
+
+    if not smtp_user or not cfg.get('smtp_password'):
+        print("[ERROR] 邮件 SMTP 配置不完整")
+        print("  请编辑 config.yaml 文件的 email 节:")
+        print("    email:")
+        print("      smtp_server: smtp.163.com")
+        print("      smtp_port: 465")
+        print("      smtp_user: your_email@163.com")
+        print("      smtp_password: your_auth_code")
         return False
-    
-    if not FEISHU_EMAIL_RECIPIENT:
+
+    if not recipients:
         print("[ERROR] 收件人邮箱未配置")
-        print("  请编辑 email_client.py 文件，配置以下变量:")
-        print("    FEISHU_EMAIL_RECIPIENT = 'your_email@gmail.com'")
+        print("  请在 config.yaml 的 email.default_recipients 中配置")
         return False
-    
-    # 测试内容
+
     subject = "[测试邮件] A股投资顾问系统"
     content = f"""
     <h3>测试邮件</h3>
     <p>这是一封测试邮件，用于验证邮件通知功能是否正常。</p>
-    
+
     <h4>配置信息</h4>
     <ul>
-        <li><strong>SMTP服务器:</strong> {SMTP_SERVER}</li>
-        <li><strong>SMTP端口:</strong> {SMTP_PORT}</li>
-        <li><strong>发件人:</strong> {SMTP_USER}</li>
-        <li><strong>收件人:</strong> {FEISHU_EMAIL_RECIPIENT}</li>
+        <li><strong>SMTP服务器:</strong> {smtp_server}</li>
+        <li><strong>SMTP端口:</strong> {smtp_port}</li>
+        <li><strong>发件人:</strong> {smtp_user}</li>
+        <li><strong>收件人:</strong> {recipients[0] if recipients else '未配置'}</li>
     </ul>
-    
-    <h4>功能说明</h4>
-    <p>此邮件由A股投资顾问系统自动发送，用于:</p>
-    <ul>
-        <li>每日A股信号通知</li>
-        <li>重要异常提醒</li>
-        <li>系统运行状态</li>
-    </ul>
-    
-    <h3>配置成功！</h3>
-    <p>您的邮件通知功能已准备就绪！</p>
-    
-    <hr>
-    <p style="color: #666; font-size: 12px;">
-        这是系统自动发送的测试邮件，请勿回复。
-    </p>
+
+    <h3>配置成功!</h3>
+    <p>您的邮件通知功能已准备就绪!</p>
     """
-    
+
     success = send_email(subject, content)
-    
+
     print("=" * 60)
     if success:
-        print("[OK] 邮件发送测试完成！")
-        print("[OK] 请检查邮箱收件箱（可能在垃圾邮件文件夹）")
+        print("[OK] 邮件发送测试完成!")
+        print("[OK] 请检查邮箱收件箱 (可能在垃圾邮件文件夹)")
     else:
         print("[ERROR] 邮件发送测试失败")
     print("=" * 60)
-    
+
     return success
 
 
@@ -207,9 +128,9 @@ if __name__ == '__main__':
     parser.add_argument('--test', action='store_true', help='测试邮件发送')
     parser.add_argument('--send-report', help='发送报告内容')
     parser.add_argument('--subject', default='A股投资顾问通知', help='邮件主题')
-    
+
     args = parser.parse_args()
-    
+
     if args.test:
         success = test_email()
     elif args.send_report:
@@ -217,5 +138,5 @@ if __name__ == '__main__':
     else:
         parser.print_help()
         success = False
-    
+
     sys.exit(0 if success else 1)

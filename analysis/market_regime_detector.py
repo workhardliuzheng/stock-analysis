@@ -40,8 +40,8 @@ CONSENSUS_THRESHOLDS = {
     BULL_LATE:  {'bull_thresh': 4, 'bear_thresh': -2},
     BEAR_TREND: {'bull_thresh': 4, 'bear_thresh': -2},
     BEAR_LATE:  {'bull_thresh': 3, 'bear_thresh': -3},
-    SIDEWAYS:   {'bull_thresh': 4, 'bear_thresh': -3},
-    HIGH_VOL:   {'bull_thresh': 4, 'bear_thresh': -3},
+    SIDEWAYS:   {'bull_thresh': 4, 'bear_thresh': -2},   # V12: -3 -> -2, 震荡市更易产生SELL
+    HIGH_VOL:   {'bull_thresh': 4, 'bear_thresh': -2},   # V12: -3 -> -2, 高波动更易产生SELL
 }
 
 # 各状态对应的多因子权重
@@ -75,7 +75,7 @@ class MarketRegimeDetector:
     THRESHOLDS = {
         BULL_TREND: {'trend_min': 65, 'vol_max': 65, 'sent_max': 75},
         BULL_LATE:  {'trend_min': 55, 'sent_min': 75},
-        BEAR_TREND: {'trend_max': 35, 'vol_max': 65},
+        BEAR_TREND: {'trend_max': 40, 'vol_max': 70},  # V12: 35->40, 65->70, 捕获缓慢下跌
         BEAR_LATE:  {'trend_max': 45, 'sent_max': 25},
         HIGH_VOL:   {'vol_min': 75, 'trend_range': 15},
     }
@@ -86,16 +86,22 @@ class MarketRegimeDetector:
     def __init__(self,
                  lookback_window: int = 50,
                  smooth_window: int = 5,
-                 min_persist_days: int = 3):
+                 min_persist_days: int = 3,
+                 momentum_lookback: int = 10,
+                 momentum_bear_threshold: float = -25):
         """
         Args:
             lookback_window: 滚动窗口天数 (用于百分位计算)
             smooth_window: 平滑窗口天数 (众数平滑防抖)
             min_persist_days: 新状态最少持续天数才生效
+            momentum_lookback: V12 趋势动量回看天数
+            momentum_bear_threshold: V12 趋势动量偏置阈值 (负值, 越小越严格)
         """
         self.lookback_window = lookback_window
         self.smooth_window = smooth_window
         self.min_persist_days = min_persist_days
+        self.momentum_lookback = momentum_lookback
+        self.momentum_bear_threshold = momentum_bear_threshold
 
     def detect(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -133,6 +139,9 @@ class MarketRegimeDetector:
 
         # 分类: 从三维度评分映射到6种状态
         raw_labels = self._classify_regimes(trend_scores, vol_scores, sent_scores)
+
+        # V12: 趋势动量偏置 - 捕获趋势快速恶化
+        raw_labels = self._apply_momentum_bias(raw_labels, trend_scores)
 
         # 平滑防抖
         smoothed_labels = self._smooth_regimes(raw_labels)
@@ -344,6 +353,46 @@ class MarketRegimeDetector:
         labels[is_bear_trend] = BEAR_TREND
 
         # 其余: SIDEWAYS (已默认)
+
+        return labels
+
+    def _apply_momentum_bias(self, raw_labels: pd.Series,
+                              trend_scores: pd.Series) -> pd.Series:
+        """
+        V12: 趋势动量偏置
+
+        当趋势分数快速下降时, 即使绝对值尚未跌破BEAR_TREND阈值,
+        也强制标记为BEAR_TREND。捕获趋势恶化的早期信号。
+
+        仅在趋势已偏弱(trend<35)且加速恶化时触发, 避免误伤震荡市。
+
+        规则:
+        1. trend_momentum = trend_scores - trend_scores.shift(lookback)
+        2. momentum < -25 且 trend < 35 -> BEAR_TREND (极端恶化)
+        3. momentum < -20 且 trend < 35 且当前非BULL类 -> BEAR_TREND
+        """
+        labels = raw_labels.copy()
+        lookback = self.momentum_lookback
+
+        trend_momentum = trend_scores - trend_scores.shift(lookback)
+
+        # 仅覆盖非BULL类状态 (避免在牛市回调时误判)
+        not_bull = ~labels.isin([BULL_TREND, BULL_LATE])
+
+        # 强偏置: 趋势极端恶化 + 趋势已弱
+        strong_bias = (trend_momentum < self.momentum_bear_threshold) & \
+                      (trend_scores < 35)
+        labels[strong_bias] = BEAR_TREND
+
+        # 中等偏置: 趋势中速恶化 + 趋势弱 + 非牛市
+        moderate_bias = not_bull & \
+                        (trend_momentum < self.momentum_bear_threshold + 5) & \
+                        (trend_scores < 35)
+        labels[moderate_bias] = BEAR_TREND
+
+        n_overridden = strong_bias.sum() + moderate_bias.sum()
+        if n_overridden > 0:
+            print(f"  V12 动量偏置: {n_overridden}天覆盖为BEAR_TREND")
 
         return labels
 

@@ -1,7 +1,7 @@
 """
-V10 智能仓位管理模块
+V11 智能仓位管理模块
 
-将二元仓位 (0/1) 转化为连续仓位 (0.0~1.0)，通过10大特性优化买卖时机：
+将二元仓位 (0/1) 转化为连续仓位 (0.0~1.0)，通过13大特性优化买卖时机：
 
 V9 原有特性:
 1. 信号确认: 连续N天同方向信号才执行
@@ -14,8 +14,13 @@ V9 原有特性:
 V10 新增特性:
 7. Regime转换仓位保护: 市场状态降级时主动减仓
 8. 技术背离预警: RSI+MACD背离时减仓30%
-9. 成交量确认入场: BUY需量能配合
-10. 动态仓位缩放: 持仓期间根据regime持续调整仓位
+9. 成交量确认入场: BUY需量能配合 (已禁用)
+10. 动态仓位缩放: 持仓期间根据regime持续调整仓位 (已禁用)
+
+V11 新增特性 (避跌优化):
+11. MA50趋势过滤: close < MA50 时压缩仓位上限
+12. 止损后再入场冷却期: 止损后等待N天再允许入场，防止鞭打
+13. 自适应止损紧缩: close < MA50 时收紧止损，牛市时放宽
 
 所有参数根据市场状态 (6种regime) 动态调整。
 
@@ -88,12 +93,25 @@ class SmartPositionConfig:
     scale_speed_down: float = 0.15        # 每日缩仓速度
     scale_speed_up: float = 0.10          # 每日加仓速度
 
+    # V11: 止损后再入场冷却期 (防鞭打)
+    reentry_cooldown_days: int = 5        # 止损后等待天数
+
+    # V11: MA50 趋势过滤
+    ma50_filter_enabled: bool = True
+    ma50_position_cap: float = 0.5        # close < MA50 时仓位乘以此值
+
+    # V11: 自适应止损紧缩
+    adaptive_stop_enabled: bool = True
+    adaptive_stop_tighten: float = 0.7    # close < MA50 时 ATR倍数 *= 此值
+    adaptive_stop_loosen: float = 1.2     # 牛市 + close > MA50 时 ATR倍数 *= 此值
+
 
 # 默认配置 (SIDEWAYS 参数)
 DEFAULT_CONFIG = SmartPositionConfig()
 
 # 6种市场状态的参数矩阵
 # V10: 新增 regime_transition, divergence, volume_confirm, dynamic_scaling 参数
+# V11: 新增 reentry_cooldown, ma50_filter, adaptive_stop 参数
 REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
     'BULL_TREND': SmartPositionConfig(
         confirm_days=1,
@@ -111,11 +129,18 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         divergence_enabled=False,         # 强牛市不启用背离（误报多）
         divergence_reduction=0.85,
         divergence_cooldown_days=5,
-        volume_confirm_enabled=False,     # 禁用：过滤有效入场
+        volume_confirm_enabled=False,
         volume_threshold=0.6,
-        dynamic_scaling_enabled=False,    # 禁用：牛市不应缩仓
+        dynamic_scaling_enabled=False,
         scale_speed_down=0.05,
         scale_speed_up=0.15,
+        # V11: 牛市保护宽松
+        reentry_cooldown_days=2,
+        ma50_filter_enabled=False,            # 牛市不限仓
+        ma50_position_cap=0.8,
+        adaptive_stop_enabled=True,
+        adaptive_stop_tighten=0.85,
+        adaptive_stop_loosen=1.2,         # 牛市放宽止损
     ),
     'BULL_LATE': SmartPositionConfig(
         confirm_days=1,
@@ -130,14 +155,21 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         step_interval_days=1,
         # V10
         regime_transition_enabled=True,
-        divergence_enabled=True,          # 末期启用背离检测
+        divergence_enabled=True,
         divergence_reduction=0.85,
         divergence_cooldown_days=5,
-        volume_confirm_enabled=False,     # 禁用
+        volume_confirm_enabled=False,
         volume_threshold=0.9,
-        dynamic_scaling_enabled=False,    # 禁用
+        dynamic_scaling_enabled=False,
         scale_speed_down=0.08,
         scale_speed_up=0.08,
+        # V11
+        reentry_cooldown_days=3,
+        ma50_filter_enabled=False,            # 牛末不限仓
+        ma50_position_cap=0.7,
+        adaptive_stop_enabled=True,
+        adaptive_stop_tighten=0.85,
+        adaptive_stop_loosen=1.0,         # 末期不放宽止损
     ),
     'BEAR_TREND': SmartPositionConfig(
         confirm_days=2,
@@ -155,11 +187,18 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         divergence_enabled=True,
         divergence_reduction=0.85,
         divergence_cooldown_days=5,
-        volume_confirm_enabled=False,     # 禁用
+        volume_confirm_enabled=False,
         volume_threshold=1.2,
-        dynamic_scaling_enabled=False,    # 禁用
+        dynamic_scaling_enabled=False,
         scale_speed_down=0.12,
         scale_speed_up=0.0,
+        # V11: 熊市保护 - 激进限仓
+        reentry_cooldown_days=5,
+        ma50_filter_enabled=True,
+        ma50_position_cap=0.4,            # 熊市 + 低于MA50 大幅限仓
+        adaptive_stop_enabled=True,
+        adaptive_stop_tighten=0.65,       # 熊市收紧止损更激进
+        adaptive_stop_loosen=1.0,
     ),
     'BEAR_LATE': SmartPositionConfig(
         confirm_days=1,
@@ -177,11 +216,18 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         divergence_enabled=True,
         divergence_reduction=0.85,
         divergence_cooldown_days=5,
-        volume_confirm_enabled=False,     # 禁用
+        volume_confirm_enabled=False,
         volume_threshold=0.8,
-        dynamic_scaling_enabled=False,    # 禁用
+        dynamic_scaling_enabled=False,
         scale_speed_down=0.06,
         scale_speed_up=0.10,
+        # V11: 底部反转 - 启用MA50过滤但宽松
+        reentry_cooldown_days=3,
+        ma50_filter_enabled=True,
+        ma50_position_cap=0.65,           # 宽松限仓 (诊断显示39%下跌期是BEAR_LATE)
+        adaptive_stop_enabled=True,
+        adaptive_stop_tighten=0.8,
+        adaptive_stop_loosen=1.0,
     ),
     'SIDEWAYS': SmartPositionConfig(
         confirm_days=1,
@@ -199,11 +245,18 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         divergence_enabled=True,
         divergence_reduction=0.85,
         divergence_cooldown_days=5,
-        volume_confirm_enabled=False,     # 禁用
+        volume_confirm_enabled=False,
         volume_threshold=0.9,
-        dynamic_scaling_enabled=False,    # 禁用
+        dynamic_scaling_enabled=False,
         scale_speed_down=0.06,
         scale_speed_up=0.06,
+        # V11: 震荡市加强保护 (诊断显示42%下跌期是SIDEWAYS)
+        reentry_cooldown_days=3,
+        ma50_filter_enabled=True,
+        ma50_position_cap=0.6,            # 加强限仓
+        adaptive_stop_enabled=True,
+        adaptive_stop_tighten=0.8,
+        adaptive_stop_loosen=1.0,
     ),
     'HIGH_VOL': SmartPositionConfig(
         confirm_days=2,
@@ -221,18 +274,25 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         divergence_enabled=True,
         divergence_reduction=0.85,
         divergence_cooldown_days=5,
-        volume_confirm_enabled=False,     # 禁用
+        volume_confirm_enabled=False,
         volume_threshold=0.8,
-        dynamic_scaling_enabled=False,    # 禁用
+        dynamic_scaling_enabled=False,
         scale_speed_down=0.10,
         scale_speed_up=0.0,
+        # V11: 高波动保护
+        reentry_cooldown_days=5,
+        ma50_filter_enabled=True,
+        ma50_position_cap=0.5,
+        adaptive_stop_enabled=True,
+        adaptive_stop_tighten=0.7,
+        adaptive_stop_loosen=1.0,
     ),
 }
 
 
 class SmartPositionManager:
     """
-    V10 智能仓位管理器
+    V11 智能仓位管理器
 
     有状态类，每个指数维护一个实例。
     通过 step() 逐日处理，输出连续仓位 (0.0~1.0)。
@@ -240,15 +300,17 @@ class SmartPositionManager:
     处理顺序:
         Phase 0:   获取 regime 参数
         Phase 0.5: Regime 转换仓位保护 (V10)
-        Phase 1:   移动止损 (最高优先级)
+        Phase 1:   移动止损 (最高优先级, V11:自适应紧缩)
         Phase 1.5: 技术背离预警 (V10)
         Phase 2:   分批步骤执行
         Phase 3:   RSI 过滤
         Phase 4:   信号确认
-        Phase 4.5: 成交量确认入场 (V10)
+        Phase 4.1: 止损后再入场冷却期 (V11)
+        Phase 4.5: 成交量确认入场 (V10, 已禁用)
         Phase 5:   最小持仓期
         Phase 6:   渐进仓位 + 分批建仓/平仓
-        Phase 6.5: 动态仓位缩放 (V10)
+        Phase 6.5: 动态仓位缩放 (V10, 已禁用)
+        Phase 7:   MA50 趋势过滤 (V11)
     """
 
     def __init__(self, config: Optional[SmartPositionConfig] = None):
@@ -272,6 +334,8 @@ class SmartPositionManager:
         self.divergence_cooldown: int = 0
         self.divergence_boost: bool = False
         self._position_changed_this_step: bool = False
+        # V11 新增状态
+        self.reentry_cooldown: int = 0
 
     def step(self, row_data: dict) -> float:
         """
@@ -288,6 +352,7 @@ class SmartPositionManager:
                 'vol': float,              (V10)
                 'vol_ma_10': float,        (V10)
                 'divergence_signal': str,  (V10, 'bearish'/'bullish'/None)
+                'ma_50': float,            (V11)
             }
 
         Returns:
@@ -299,11 +364,16 @@ class SmartPositionManager:
         atr = float(row_data.get('atr', 0.0))
         close = float(row_data.get('close', 0.0))
         regime = str(row_data.get('regime_label', 'SIDEWAYS'))
+        ma_50 = _safe_float(row_data.get('ma_50', 0.0))
 
         if close <= 0:
             return self.current_position
 
         self._position_changed_this_step = False
+
+        # V11: 再入场冷却期递减
+        if self.reentry_cooldown > 0:
+            self.reentry_cooldown -= 1
 
         # Phase 0: 获取当前 regime 参数
         if self._custom_config is not None:
@@ -318,16 +388,27 @@ class SmartPositionManager:
                 self.prev_regime = regime
                 return phase05_result
 
-        # Phase 1: 移动止损 (最高优先级)
+        # Phase 1: 移动止损 (最高优先级, V11: 自适应紧缩)
         if self.current_position > 0 and params.trailing_stop_enabled:
             self.peak_price = max(self.peak_price, close)
             if self.peak_price > 0:
                 drawdown = (self.peak_price - close) / self.peak_price
                 if atr > 0 and close > 0:
-                    threshold = atr * params.trailing_stop_atr_mult / close
+                    atr_mult = params.trailing_stop_atr_mult
+                    # V11: 自适应止损 - 根据 close vs MA50 动态调整 ATR 倍数
+                    if params.adaptive_stop_enabled and ma_50 > 0:
+                        if close < ma_50:
+                            # 趋势转弱: 收紧止损 (更容易触发)
+                            atr_mult *= params.adaptive_stop_tighten
+                        elif regime in ('BULL_TREND', 'BULL_LATE') and close > ma_50:
+                            # 强势牛市: 放宽止损 (减少误触发)
+                            atr_mult *= params.adaptive_stop_loosen
+                    threshold = atr * atr_mult / close
                 else:
                     threshold = 0.08
                 if drawdown > threshold:
+                    # V11: 止损触发后设置再入场冷却期
+                    self.reentry_cooldown = params.reentry_cooldown_days
                     self._reset_position_state()
                     self.prev_regime = regime
                     return 0.0
@@ -359,6 +440,10 @@ class SmartPositionManager:
         # Phase 4: 信号确认
         confirmed_signal = self._confirm_signal(filtered_signal, params)
 
+        # Phase 4.1: 止损后再入场冷却期 (V11)
+        if self.reentry_cooldown > 0 and confirmed_signal == 'BUY':
+            confirmed_signal = 'HOLD'
+
         # Phase 4.5: 成交量确认入场 (V10)
         if params.volume_confirm_enabled and confirmed_signal == 'BUY':
             confirmed_signal = self._check_volume_confirmation(
@@ -383,6 +468,14 @@ class SmartPositionManager:
                 and not self._position_changed_this_step):
             self._apply_dynamic_scaling(confidence, regime, params)
 
+        # Phase 7: MA50 趋势过滤 (V11)
+        # close < MA50 时限制仓位上限，防止在下行趋势中重仓
+        if (params.ma50_filter_enabled and ma_50 > 0
+                and close < ma_50 and self.current_position > 0):
+            cap = params.ma50_position_cap
+            if self.current_position > cap:
+                self.current_position = cap
+
         self.prev_regime = regime
         return self.current_position
 
@@ -392,6 +485,7 @@ class SmartPositionManager:
         对整个 DataFrame 生成仓位序列 (含 T+1 延迟)
 
         V10: 预计算背离信号，新增 vol/vol_ma_10 传递
+        V11: 新增 ma_50 传递
         """
         self.reset()
 
@@ -414,6 +508,8 @@ class SmartPositionManager:
                 'vol': _safe_float(row.get('vol', 0.0)),
                 'vol_ma_10': _safe_float(row.get('vol_ma_10', 0.0)),
                 'divergence_signal': divergence_signals.iloc[i],
+                # V11 新增
+                'ma_50': _safe_float(row.get('ma_50', 0.0)),
             }
             positions.iloc[i] = self.step(row_data)
 

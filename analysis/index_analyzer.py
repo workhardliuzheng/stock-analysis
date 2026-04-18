@@ -47,6 +47,7 @@ class IndexAnalyzer:
     def __init__(self, 
                  ts_code: str, 
                  start_date: Optional[str] = None,
+                 end_date: Optional[str] = None,
                  lookback_years: int = 5):
         """
         初始化指数分析器
@@ -54,6 +55,7 @@ class IndexAnalyzer:
         Args:
             ts_code: 指数代码
             start_date: 开始日期，默认为5年前
+            end_date: 结束日期，默认为当前日期
             lookback_years: 百分位计算回溯年数
         """
         self.ts_code = ts_code
@@ -64,6 +66,7 @@ class IndexAnalyzer:
             start_year = datetime.now().year - lookback_years
             start_date = f"{start_year}0101"
         self.start_date = start_date
+        self.end_date = end_date
         
         # 初始化计算器
         self.cross_detector = CrossSignalDetector()
@@ -91,7 +94,7 @@ class IndexAnalyzer:
         Returns:
             pd.DataFrame: 指数历史数据
         """
-        end_date = TimeUtils.get_current_date_str()
+        end_date = self.end_date if self.end_date else TimeUtils.get_current_date_str()
         index_data = self.mapper.select_by_code_and_trade_round(
             self.ts_code, self.start_date, end_date
         )
@@ -556,8 +559,10 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
 
 
 def portfolio_backtest(start_date: str = '20200101',
+                       end_date: Optional[str] = None,
                        commission_rate: float = 0.00006,
                        use_smart_position: bool = False,
+                       cross_index_consensus: bool = True,
                        **kwargs) -> dict:
     """
     运行组合级回测
@@ -567,8 +572,10 @@ def portfolio_backtest(start_date: str = '20200101',
 
     Args:
         start_date: 回测起始日期 (YYYYMMDD)
+        end_date: 回测结束日期 (YYYYMMDD)，默认为当前日期
         commission_rate: 单边佣金率 (默认万0.6)
         use_smart_position: 启用 V10 智能仓位管理
+        cross_index_consensus: V12 启用跨指数趋势共识
         **kwargs: 兼容 main.py 传入的其他参数
 
     Returns:
@@ -577,8 +584,10 @@ def portfolio_backtest(start_date: str = '20200101',
     from analysis.portfolio_backtester import PortfolioBacktester
     bt = PortfolioBacktester(
         start_date=start_date,
+        end_date=end_date,
         commission_rate=commission_rate,
         use_smart_position=use_smart_position,
+        cross_index_consensus_enabled=cross_index_consensus,
     )
     return bt.run()
 

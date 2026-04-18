@@ -281,11 +281,17 @@ class MetaLearner:
             self.best_weights['ml_signal'] * df['ml_signal_num'] * 50
         )
         
-        # 归一化到0-100 (防止溢出)
-        df['fused_score'] = (
-            (df['fused_score'] - df['fused_score'].min()) / 
-            (df['fused_score'].max() - df['fused_score'].min()) * 100
-        )
+        # 归一化到0-100
+        # 注意: 数据加载已解耦（始终用全量历史），全局 min/max 在不同回测区间下是一致的
+        score_min = df['fused_score'].min()
+        score_max = df['fused_score'].max()
+        score_range = score_max - score_min
+        if score_range > 0:
+            df['fused_score'] = (
+                (df['fused_score'] - score_min) / score_range * 100
+            )
+        else:
+            df['fused_score'] = 50.0
         
         # 生成基础信号
         df['fused_signal'] = 'HOLD'

@@ -1,47 +1,7 @@
-<<<<<<< Local
 # Python cache
 __pycache__/
 *.py[cod]
 *$py.class
-=======
-# Python cache
-__pycache__/
-*.py[cod]
-*$py.class
-
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Build files
-dist/
-build/
-*.egg-info/
-
-# Data files (optional - uncomment if needed)
-# data/
-# models/
-
-# Generated output files
-logs/
-reports/
-*.log
-
-# Temporary output files
-*.txt
-!requirements.txt
-daily_report.html
-run_output.log
-
-# Windows reserved file
-nul
->>>>>>> Remote
 
 # Editor files
 .vscode/
@@ -72,6 +32,7 @@ reports/
 !requirements.txt
 daily_report.html
 run_output.log
+dynamic_weight_results.json
 
 # Windows reserved file
 nul
