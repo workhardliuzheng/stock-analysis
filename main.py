@@ -293,6 +293,8 @@ if __name__ == "__main__":
                         help='启用V9智能仓位管理 (backtest模式)')
     parser.add_argument('--no-cross-consensus', action='store_true',
                         help='禁用V12跨指数趋势共识 (backtest模式)')
+    parser.add_argument('--no-macro', action='store_true',
+                        help='禁用V13宏观因子 (signal/backtest模式)')
     args = parser.parse_args()
     
     # 日期校验
@@ -325,6 +327,7 @@ if __name__ == "__main__":
             ts_code=args.ts_code,
             include_ml=not args.no_ml,
             auto_tune=args.auto_tune,
+            include_macro=not args.no_macro,
             model_type=args.model_type,
             feature_selection=args.feature_selection
         )
@@ -340,4 +343,5 @@ if __name__ == "__main__":
             commission_rate=args.commission,
             use_smart_position=args.smart_position,
             cross_index_consensus=not args.no_cross_consensus,
+            include_macro=not args.no_macro,
         )

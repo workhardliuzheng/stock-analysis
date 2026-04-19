@@ -35,6 +35,7 @@ class IndexAnalyzer:
     5. 信号整合与回测
     6. 生成多维度分析图表
     7. 提供当前市场状态摘要
+    8. V13: 宏观因子分析（利率/北向资金/融资融券/汇率）
     
     使用示例:
         analyzer = IndexAnalyzer('000001.SH')
@@ -48,7 +49,8 @@ class IndexAnalyzer:
                  ts_code: str, 
                  start_date: Optional[str] = None,
                  end_date: Optional[str] = None,
-                 lookback_years: int = 5):
+                 lookback_years: int = 5,
+                 include_macro: bool = True):
         """
         初始化指数分析器
         
@@ -57,9 +59,11 @@ class IndexAnalyzer:
             start_date: 开始日期，默认为5年前
             end_date: 结束日期，默认为当前日期
             lookback_years: 百分位计算回溯年数
+            include_macro: V13 是否包含宏观因子 (默认开启)
         """
         self.ts_code = ts_code
         self.lookback_years = lookback_years
+        self.include_macro = include_macro
         
         # 默认开始日期为回溯年数之前
         if start_date is None:
@@ -78,6 +82,11 @@ class IndexAnalyzer:
         # V8: 市场状态识别器
         from analysis.market_regime_detector import MarketRegimeDetector
         self.regime_detector = MarketRegimeDetector()
+        
+        # V13: 宏观因子 (延迟加载)
+        self._macro_collector = None
+        self._macro_scorer = None
+        self._macro_data = None  # 缓存宏观数据
         
         # 加载数据
         self.mapper = SixtyIndexMapper()
@@ -138,7 +147,12 @@ class IndexAnalyzer:
         print(f"正在计算 {self.name} 的历史百分位...")
         self.data = self.percentile_calculator.calculate(self.data)
         
+        # V13: 宏观因子采集与评分 (在 regime_detector 之前)
+        if self.include_macro:
+            self._apply_macro_factors()
+        
         # V8: 市场状态识别 (需在percentile之后, multi_factor之前)
+        # V13: 现在会利用 macro_score 作为第4维度
         print(f"正在识别 {self.name} 的市场状态...")
         self.data = self.regime_detector.detect(self.data)
         
@@ -147,6 +161,7 @@ class IndexAnalyzer:
         self.data = self.multi_factor_scorer.calculate(self.data)
         
         # ML 预测（使用滚动预测避免数据泄露）
+        # V13: 宏观特征已合并到 self.data, ML 会自动使用
         if include_ml:
             try:
                 predictor = self._get_ml_predictor()
@@ -176,6 +191,42 @@ class IndexAnalyzer:
         self.data = self.signal_generator.generate(self.data)
         
         return self.data
+    
+    def _apply_macro_factors(self):
+        """
+        V13: 采集宏观数据并与指数数据对齐
+        
+        宏观数据是全局性的（不分指数），使用类级缓存避免重复获取。
+        """
+        try:
+            from analysis.macro_factor_collector import MacroFactorCollector
+            from analysis.macro_factor_scorer import MacroFactorScorer
+            
+            print(f"正在获取 {self.name} 的宏观因子数据...")
+            
+            if self._macro_collector is None:
+                self._macro_collector = MacroFactorCollector()
+            if self._macro_scorer is None:
+                self._macro_scorer = MacroFactorScorer()
+            
+            # 采集宏观数据 (使用缓存)
+            macro_df = self._macro_collector.collect(self.start_date,
+                                                      self.end_date or datetime.now().strftime('%Y%m%d'))
+            
+            if macro_df.empty or len(macro_df) < 10:
+                print(f"  宏观数据不足，跳过宏观因子")
+                return
+            
+            # 对齐到指数交易日
+            self.data = MacroFactorCollector.align_to_index(macro_df, self.data)
+            
+            # 计算宏观因子评分
+            self.data = self._macro_scorer.score(self.data)
+            
+        except Exception as e:
+            print(f"  宏观因子处理失败: {e}，跳过")
+            import traceback
+            traceback.print_exc()
     
     def _get_ml_predictor(self):
         """延迟加载 ML 预测器"""
@@ -532,7 +583,7 @@ def analyze_all_indices(save_charts: bool = True, print_status: bool = True,
 
 
 def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
-                       auto_tune: bool = False, **kwargs):
+                       auto_tune: bool = False, include_macro: bool = True, **kwargs):
     """
     生成指数交易信号
     
@@ -540,6 +591,7 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
         ts_code: 指定指数代码，None 表示全部
         include_ml: 是否包含 ML 预测
         auto_tune: 是否使用 Optuna 自动调优
+        include_macro: V13 是否包含宏观因子
         **kwargs: 兼容 main.py 传入的其他参数 (model_type 等)
     """
     if ts_code:
@@ -549,7 +601,7 @@ def signal_all_indices(ts_code: Optional[str] = None, include_ml: bool = True,
     
     for code in codes:
         try:
-            analyzer = IndexAnalyzer(code)
+            analyzer = IndexAnalyzer(code, include_macro=include_macro)
             analyzer.analyze(include_ml=include_ml, auto_tune=auto_tune)
             analyzer.print_current_signal()
         except Exception as e:
@@ -563,6 +615,7 @@ def portfolio_backtest(start_date: str = '20200101',
                        commission_rate: float = 0.00006,
                        use_smart_position: bool = False,
                        cross_index_consensus: bool = True,
+                       include_macro: bool = True,
                        **kwargs) -> dict:
     """
     运行组合级回测
@@ -576,6 +629,7 @@ def portfolio_backtest(start_date: str = '20200101',
         commission_rate: 单边佣金率 (默认万0.6)
         use_smart_position: 启用 V10 智能仓位管理
         cross_index_consensus: V12 启用跨指数趋势共识
+        include_macro: V13 启用宏观因子
         **kwargs: 兼容 main.py 传入的其他参数
 
     Returns:
@@ -588,6 +642,7 @@ def portfolio_backtest(start_date: str = '20200101',
         commission_rate=commission_rate,
         use_smart_position=use_smart_position,
         cross_index_consensus_enabled=cross_index_consensus,
+        include_macro=include_macro,
     )
     return bt.run()
 

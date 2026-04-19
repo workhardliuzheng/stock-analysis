@@ -1,7 +1,7 @@
 """
-V11 智能仓位管理模块
+V14 智能仓位管理模块
 
-将二元仓位 (0/1) 转化为连续仓位 (0.0~1.0)，通过13大特性优化买卖时机：
+将二元仓位 (0/1) 转化为连续仓位 (0.0~1.0)，通过15大特性优化买卖时机：
 
 V9 原有特性:
 1. 信号确认: 连续N天同方向信号才执行
@@ -21,6 +21,10 @@ V11 新增特性 (避跌优化):
 11. MA50趋势过滤: close < MA50 时压缩仓位上限
 12. 止损后再入场冷却期: 止损后等待N天再允许入场，防止鞭打
 13. 自适应止损紧缩: close < MA50 时收紧止损，牛市时放宽
+
+V14 新增特性 (防鞭打增强):
+14. 累计止损衰减冷却: 近期止损越多冷却期越长，达阈值进入观望模式
+15. Regime入场禁令: 止损后等待regime等级改善才允许再入场
 
 所有参数根据市场状态 (6种regime) 动态调整。
 
@@ -105,6 +109,18 @@ class SmartPositionConfig:
     adaptive_stop_tighten: float = 0.7    # close < MA50 时 ATR倍数 *= 此值
     adaptive_stop_loosen: float = 1.2     # 牛市 + close > MA50 时 ATR倍数 *= 此值
 
+    # V14: 累计止损衰减冷却 (防鞭打增强)
+    stop_decay_enabled: bool = True
+    stop_decay_window: int = 30           # 统计近N天内止损次数
+    stop_decay_multiplier: float = 1.0    # 每次额外止损增加的冷却倍数
+    stop_decay_max_cooldown: int = 25     # 最大冷却天数上限
+    stop_decay_observe_mode_threshold: int = 3  # 连续N次止损后进入观望模式
+    stop_decay_observe_confirm_days: int = 3    # 观望模式下BUY需要的确认天数
+
+    # V14: Regime入场禁令 (止损后等待regime改善)
+    regime_gate_enabled: bool = True
+    regime_gate_max_wait: int = 30        # 最长等待天数(兜底)
+
 
 # 默认配置 (SIDEWAYS 参数)
 DEFAULT_CONFIG = SmartPositionConfig()
@@ -141,6 +157,15 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         adaptive_stop_enabled=True,
         adaptive_stop_tighten=0.85,
         adaptive_stop_loosen=1.2,         # 牛市放宽止损
+        # V14: 牛市鞭打保护宽松
+        stop_decay_enabled=True,
+        stop_decay_window=30,
+        stop_decay_multiplier=0.5,        # 牛市衰减慢
+        stop_decay_max_cooldown=15,
+        stop_decay_observe_mode_threshold=4,  # 牛市容忍更多止损
+        stop_decay_observe_confirm_days=2,
+        regime_gate_enabled=False,        # 牛市不做regime门控
+        regime_gate_max_wait=15,
     ),
     'BULL_LATE': SmartPositionConfig(
         confirm_days=1,
@@ -170,6 +195,15 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         adaptive_stop_enabled=True,
         adaptive_stop_tighten=0.85,
         adaptive_stop_loosen=1.0,         # 末期不放宽止损
+        # V14: 牛末适度保护
+        stop_decay_enabled=True,
+        stop_decay_window=30,
+        stop_decay_multiplier=0.8,
+        stop_decay_max_cooldown=20,
+        stop_decay_observe_mode_threshold=3,
+        stop_decay_observe_confirm_days=2,
+        regime_gate_enabled=True,
+        regime_gate_max_wait=20,
     ),
     'BEAR_TREND': SmartPositionConfig(
         confirm_days=2,
@@ -199,6 +233,15 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         adaptive_stop_enabled=True,
         adaptive_stop_tighten=0.65,       # 熊市收紧止损更激进
         adaptive_stop_loosen=1.0,
+        # V14: 熊市严格防鞭打
+        stop_decay_enabled=True,
+        stop_decay_window=30,
+        stop_decay_multiplier=1.5,        # 熊市衰减快
+        stop_decay_max_cooldown=25,
+        stop_decay_observe_mode_threshold=2,  # 熊市2次止损就进入观望
+        stop_decay_observe_confirm_days=3,
+        regime_gate_enabled=True,         # 熊市强制regime门控
+        regime_gate_max_wait=30,
     ),
     'BEAR_LATE': SmartPositionConfig(
         confirm_days=1,
@@ -228,6 +271,15 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         adaptive_stop_enabled=True,
         adaptive_stop_tighten=0.8,
         adaptive_stop_loosen=1.0,
+        # V14: 底部反转适度宽松
+        stop_decay_enabled=True,
+        stop_decay_window=30,
+        stop_decay_multiplier=0.8,
+        stop_decay_max_cooldown=20,
+        stop_decay_observe_mode_threshold=3,
+        stop_decay_observe_confirm_days=2,
+        regime_gate_enabled=True,
+        regime_gate_max_wait=20,
     ),
     'SIDEWAYS': SmartPositionConfig(
         confirm_days=1,
@@ -257,6 +309,15 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         adaptive_stop_enabled=True,
         adaptive_stop_tighten=0.8,
         adaptive_stop_loosen=1.0,
+        # V14: 震荡市中等偏严格
+        stop_decay_enabled=True,
+        stop_decay_window=30,
+        stop_decay_multiplier=1.0,
+        stop_decay_max_cooldown=25,
+        stop_decay_observe_mode_threshold=3,
+        stop_decay_observe_confirm_days=3,
+        regime_gate_enabled=True,
+        regime_gate_max_wait=25,
     ),
     'HIGH_VOL': SmartPositionConfig(
         confirm_days=2,
@@ -286,13 +347,22 @@ REGIME_PARAMS: Dict[str, SmartPositionConfig] = {
         adaptive_stop_enabled=True,
         adaptive_stop_tighten=0.7,
         adaptive_stop_loosen=1.0,
+        # V14: 高波动严格防鞭打
+        stop_decay_enabled=True,
+        stop_decay_window=30,
+        stop_decay_multiplier=1.2,
+        stop_decay_max_cooldown=25,
+        stop_decay_observe_mode_threshold=2,
+        stop_decay_observe_confirm_days=3,
+        regime_gate_enabled=True,
+        regime_gate_max_wait=25,
     ),
 }
 
 
 class SmartPositionManager:
     """
-    V11 智能仓位管理器
+    V14 智能仓位管理器
 
     有状态类，每个指数维护一个实例。
     通过 step() 逐日处理，输出连续仓位 (0.0~1.0)。
@@ -300,12 +370,12 @@ class SmartPositionManager:
     处理顺序:
         Phase 0:   获取 regime 参数
         Phase 0.5: Regime 转换仓位保护 (V10)
-        Phase 1:   移动止损 (最高优先级, V11:自适应紧缩)
+        Phase 1:   移动止损 (最高优先级, V11:自适应紧缩, V14:衰减冷却)
         Phase 1.5: 技术背离预警 (V10)
         Phase 2:   分批步骤执行
         Phase 3:   RSI 过滤
         Phase 4:   信号确认
-        Phase 4.1: 止损后再入场冷却期 (V11)
+        Phase 4.1: 止损后再入场控制 (V14: 衰减冷却+regime门控+观望模式)
         Phase 4.5: 成交量确认入场 (V10, 已禁用)
         Phase 5:   最小持仓期
         Phase 6:   渐进仓位 + 分批建仓/平仓
@@ -336,6 +406,14 @@ class SmartPositionManager:
         self._position_changed_this_step: bool = False
         # V11 新增状态
         self.reentry_cooldown: int = 0
+        # V14 新增状态 (防鞭打增强)
+        self.stop_history: list = []       # 近期止损事件列表 [(day_idx, regime)]
+        self.day_counter: int = 0          # 全局日计数器
+        self.in_observe_mode: bool = False  # 观望模式标记
+        self.observe_confirm_count: int = 0  # 观望模式下连续BUY信号计数
+        self.regime_gate_active: bool = False  # regime门控激活
+        self.regime_gate_start_regime: str = ''  # 止损时的regime
+        self.regime_gate_days: int = 0     # regime门控等待天数
 
     def step(self, row_data: dict) -> float:
         """
@@ -371,9 +449,16 @@ class SmartPositionManager:
 
         self._position_changed_this_step = False
 
+        # V14: 全局日计数器递增
+        self.day_counter += 1
+
         # V11: 再入场冷却期递减
         if self.reentry_cooldown > 0:
             self.reentry_cooldown -= 1
+
+        # V14: regime门控等待天数递增
+        if self.regime_gate_active:
+            self.regime_gate_days += 1
 
         # Phase 0: 获取当前 regime 参数
         if self._custom_config is not None:
@@ -407,8 +492,9 @@ class SmartPositionManager:
                 else:
                     threshold = 0.08
                 if drawdown > threshold:
-                    # V11: 止损触发后设置再入场冷却期
-                    self.reentry_cooldown = params.reentry_cooldown_days
+                    # V14: 记录止损事件并计算衰减冷却期
+                    cooldown = self._calc_decay_cooldown(params, regime)
+                    self.reentry_cooldown = cooldown
                     self._reset_position_state()
                     self.prev_regime = regime
                     return 0.0
@@ -440,9 +526,29 @@ class SmartPositionManager:
         # Phase 4: 信号确认
         confirmed_signal = self._confirm_signal(filtered_signal, params)
 
-        # Phase 4.1: 止损后再入场冷却期 (V11)
-        if self.reentry_cooldown > 0 and confirmed_signal == 'BUY':
-            confirmed_signal = 'HOLD'
+        # Phase 4.1: 止损后再入场冷却期 (V14: 衰减冷却+regime门控+观望模式)
+        if confirmed_signal == 'BUY':
+            # 4.1a: 基本冷却期检查
+            if self.reentry_cooldown > 0:
+                confirmed_signal = 'HOLD'
+            # 4.1b: Regime门控 - 止损后等待regime改善才允许入场
+            elif self.regime_gate_active and params.regime_gate_enabled:
+                gate_passed = self._check_regime_gate(regime, params)
+                if not gate_passed:
+                    confirmed_signal = 'HOLD'
+            # 4.1c: 观望模式 - 连续多次止损后需要更多确认
+            elif self.in_observe_mode and params.stop_decay_enabled:
+                self.observe_confirm_count += 1
+                if self.observe_confirm_count < params.stop_decay_observe_confirm_days:
+                    confirmed_signal = 'HOLD'
+                else:
+                    # 确认天数达标，退出观望模式
+                    self.in_observe_mode = False
+                    self.observe_confirm_count = 0
+        else:
+            # 非BUY信号重置观望确认计数
+            if self.in_observe_mode:
+                self.observe_confirm_count = 0
 
         # Phase 4.5: 成交量确认入场 (V10)
         if params.volume_confirm_enabled and confirmed_signal == 'BUY':
@@ -683,6 +789,83 @@ class SmartPositionManager:
         result[bullish.fillna(False)] = 'bullish'
 
         return result
+
+    # ==================== V14 新增方法 (防鞭打增强) ====================
+
+    def _calc_decay_cooldown(self, params: SmartPositionConfig,
+                             regime: str) -> int:
+        """
+        V14: 计算衰减冷却期
+
+        根据近期止损次数递增冷却天数，并判断是否进入观望模式/regime门控。
+
+        Returns:
+            int: 计算后的冷却天数
+        """
+        # 记录本次止损事件
+        self.stop_history.append((self.day_counter, regime))
+
+        if not params.stop_decay_enabled:
+            return params.reentry_cooldown_days
+
+        # 清理窗口外的止损记录
+        window_start = self.day_counter - params.stop_decay_window
+        self.stop_history = [
+            (d, r) for d, r in self.stop_history if d >= window_start
+        ]
+
+        # 窗口内止损次数 (含本次)
+        n_stops = len(self.stop_history)
+
+        # 基础冷却 + 衰减累加
+        # 第1次: base, 第2次: base + mult*base, 第3次: base + 2*mult*base ...
+        extra = max(0, n_stops - 1)
+        cooldown = params.reentry_cooldown_days + int(
+            extra * params.stop_decay_multiplier * params.reentry_cooldown_days
+        )
+        cooldown = min(cooldown, params.stop_decay_max_cooldown)
+
+        # 检查是否进入观望模式
+        if n_stops >= params.stop_decay_observe_mode_threshold:
+            self.in_observe_mode = True
+            self.observe_confirm_count = 0
+
+        # 激活regime门控
+        if params.regime_gate_enabled:
+            self.regime_gate_active = True
+            self.regime_gate_start_regime = regime
+            self.regime_gate_days = 0
+
+        return cooldown
+
+    def _check_regime_gate(self, current_regime: str,
+                           params: SmartPositionConfig) -> bool:
+        """
+        V14: Regime门控检查
+
+        止损后要求regime改善(等级提升)才允许再入场。
+        有最大等待天数兜底，防止永远无法入场。
+
+        Returns:
+            True: 门控通过，允许入场
+            False: 门控未通过，阻止入场
+        """
+        # 兜底: 超过最大等待天数，强制放行
+        if self.regime_gate_days >= params.regime_gate_max_wait:
+            self.regime_gate_active = False
+            return True
+
+        # 检查regime是否改善
+        start_rank = REGIME_RANK.get(self.regime_gate_start_regime, 2)
+        current_rank = REGIME_RANK.get(current_regime, 2)
+
+        if current_rank > start_rank:
+            # regime已改善，放行
+            self.regime_gate_active = False
+            return True
+
+        # regime未改善，继续等待
+        return False
 
     # ==================== V9 原有内部方法 ====================
 

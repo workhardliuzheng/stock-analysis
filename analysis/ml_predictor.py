@@ -219,6 +219,11 @@ class MLPredictor:
             result['feat_regime_sent_score'] = pd.to_numeric(
                 result['regime_sent_score'], errors='coerce').fillna(50)
 
+        # V13 注: 宏观因子不进入ML特征空间 (会改变模型训练导致信号漂移)
+        # 宏观因子通过 regime detection 间接影响:
+        #   1. macro_score -> _apply_macro_bias() -> 市场状态判断
+        #   2. 市场状态 -> 共识阈值 + 因子权重调整
+
         # 收集特征列名
         self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
 
@@ -454,7 +459,7 @@ class MLPredictor:
         self._flip_signals = False
         if ic < -0.02:
             self._flip_signals = True
-            print(f"  ⚠ IC={ic:.4f} < -0.02，启用信号反转模式（contrarian mode）")
+            print(f"  [WARNING] IC={ic:.4f} < -0.02, 启用信号反转模式 (contrarian mode)")
             # 翻转预测值: 取反
             preds_all = np.where(np.isnan(preds_all), np.nan, -preds_all)
             # 重新计算翻转后的 IC

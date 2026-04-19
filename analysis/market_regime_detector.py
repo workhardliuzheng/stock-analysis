@@ -1,7 +1,7 @@
 """
-V8 市场状态识别模块
+V13 市场状态识别模块
 
-通过趋势、波动率、情绪三个维度识别市场所处的制度(Regime)，
+通过趋势、波动率、情绪、宏观四个维度识别市场所处的制度(Regime)，
 并据此为下游模块提供动态参数调整依据。
 
 6种市场状态:
@@ -12,11 +12,18 @@ V8 市场状态识别模块
 - SIDEWAYS:   震荡市
 - HIGH_VOL:   高波动无方向
 
+维度:
+1. 趋势维度 (0-100): MA50斜率 + Price/MA50位置 + ADX方向强度
+2. 波动维度 (0-100): ATR百分位 + BB宽度百分位 + 实际波动率比
+3. 情绪维度 (0-100): PE百分位 + 成交量/均线比 + RSI极端区间
+4. 宏观维度 (0-100): 利率 + 北向资金 + 融资融券 + 汇率 [V13新增]
+
 设计原则:
 1. 仅使用当前及之前数据(无未来泄露)
 2. 50日滚动窗口 + 5日众数平滑防抖
 3. 施密特触发器防止状态边界跳变
 4. 向后兼容: 数据不足时默认 SIDEWAYS
+5. V13: 宏观恶化可加速进入BEAR_TREND, 宏观转好可辅助识别BEAR_LATE底部
 """
 
 import json
@@ -59,16 +66,18 @@ class MarketRegimeDetector:
     """
     市场状态识别器
 
-    三维度评分:
+    四维度评分:
     - 趋势维度 (0-100): MA50斜率 + Price/MA50位置 + ADX方向强度
     - 波动维度 (0-100): ATR百分位 + BB宽度百分位 + 实际波动率比
     - 情绪维度 (0-100): PE百分位 + 成交量/均线比 + RSI极端区间
+    - 宏观维度 (0-100): 利率 + 北向资金 + 融资融券 + 汇率 [V13新增]
 
     使用示例:
         detector = MarketRegimeDetector()
         df = detector.detect(df)
         # df 新增列: regime_label, regime_score,
-        #            regime_trend_score, regime_vol_score, regime_sent_score
+        #            regime_trend_score, regime_vol_score, regime_sent_score,
+        #            regime_macro_score
     """
 
     # 分类阈值
@@ -110,11 +119,12 @@ class MarketRegimeDetector:
         Args:
             df: 包含技术指标的 DataFrame (需含 close, ma_50, adx, plus_di, minus_di,
                 atr, bb_high, bb_low, bb_mid, rsi, vol, vol_ma_10, pct_chg,
-                percentile_ranks 等列)
+                percentile_ranks 等列，可选宏观列 macro_score 等)
 
         Returns:
             pd.DataFrame: 新增 regime_label, regime_score,
-                          regime_trend_score, regime_vol_score, regime_sent_score 列
+                          regime_trend_score, regime_vol_score, regime_sent_score,
+                          regime_macro_score 列
         """
         result = df.copy()
 
@@ -137,8 +147,15 @@ class MarketRegimeDetector:
         result['regime_vol_score'] = vol_scores
         result['regime_sent_score'] = sent_scores
 
+        # V13: 宏观维度评分 (如果已由 index_analyzer 预计算则直接使用)
+        macro_scores = self._get_macro_scores(result)
+        result['regime_macro_score'] = macro_scores
+
         # 分类: 从三维度评分映射到6种状态
         raw_labels = self._classify_regimes(trend_scores, vol_scores, sent_scores)
+
+        # V13: 宏观因子偏置 - 宏观恶化加速识别BEAR, 宏观转好辅助识别底部
+        raw_labels = self._apply_macro_bias(raw_labels, trend_scores, macro_scores)
 
         # V12: 趋势动量偏置 - 捕获趋势快速恶化
         raw_labels = self._apply_momentum_bias(raw_labels, trend_scores)
@@ -154,10 +171,15 @@ class MarketRegimeDetector:
 
         # 统计
         regime_counts = result['regime_label'].value_counts()
-        print(f"[OK] V8 市场状态识别完成")
+        print(f"[OK] V13 市场状态识别完成")
         for regime, count in regime_counts.items():
             pct = count / len(result) * 100
             print(f"  {regime}: {count}天 ({pct:.1f}%)")
+
+        # V13: 打印宏观维度统计
+        if macro_scores.mean() != 50.0:
+            print(f"  宏观评分: 均值={macro_scores.mean():.1f}, "
+                  f"最新={macro_scores.iloc[-1]:.1f}")
 
         return result
 
@@ -473,6 +495,61 @@ class MarketRegimeDetector:
             confidence[mask] = conf.clip(0, 100)
 
         return confidence
+
+    # ==================== V13: 宏观维度 ====================
+
+    def _get_macro_scores(self, df: pd.DataFrame) -> pd.Series:
+        """
+        获取宏观维度评分
+
+        如果 DataFrame 中已有 macro_score 列 (由 index_analyzer 预计算)，
+        直接使用；否则返回中性值 50。
+        """
+        if 'macro_score' in df.columns:
+            return pd.to_numeric(df['macro_score'], errors='coerce').fillna(50.0)
+        return pd.Series(50.0, index=df.index)
+
+    def _apply_macro_bias(self, raw_labels: pd.Series,
+                           trend_scores: pd.Series,
+                           macro_scores: pd.Series) -> pd.Series:
+        """
+        V13: 宏观因子偏置
+
+        宏观环境恶化时加速识别熊市，宏观环境转好时辅助识别底部。
+
+        规则:
+        1. 宏观极差(macro<30) + 趋势偏弱(trend<45) + 非BULL类 -> BEAR_TREND
+           (宏观资金面收紧 + 利率上行 + 北向资金流出 + 人民币贬值)
+        2. 宏观极好(macro>70) + 趋势极弱(trend<30) + 当前BEAR_TREND -> BEAR_LATE
+           (宏观底部信号: 利率开始下行 + 资金回流，辅助判断熊市尾声)
+
+        仅在宏观数据有效时触发 (macro_scores 不全为50)
+        """
+        labels = raw_labels.copy()
+
+        # 检查是否有有效的宏观数据
+        if macro_scores.std() < 1.0:
+            # 宏观数据全为50 (无数据), 不做偏置
+            return labels
+
+        not_bull = ~labels.isin([BULL_TREND, BULL_LATE])
+
+        # 规则1: 宏观恶化 + 趋势偏弱 -> BEAR_TREND
+        macro_bearish = (macro_scores < 30) & (trend_scores < 45) & not_bull
+        n_bear_override = macro_bearish.sum()
+        labels[macro_bearish] = BEAR_TREND
+
+        # 规则2: 宏观转好 + 趋势极弱 + 当前BEAR -> BEAR_LATE (辅助识别底部)
+        is_bear = labels == BEAR_TREND
+        macro_bullish_bottom = (macro_scores > 70) & (trend_scores < 30) & is_bear
+        n_late_override = macro_bullish_bottom.sum()
+        labels[macro_bullish_bottom] = BEAR_LATE
+
+        if n_bear_override > 0 or n_late_override > 0:
+            print(f"  V13 宏观偏置: {n_bear_override}天->BEAR_TREND, "
+                  f"{n_late_override}天->BEAR_LATE")
+
+        return labels
 
     # ==================== 工具方法 ====================
 

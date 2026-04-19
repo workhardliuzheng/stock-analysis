@@ -57,7 +57,8 @@ class PortfolioBacktester:
                  min_rebalance_threshold: float = 0.001,
                  chart_save_dir: str = 'records',
                  use_smart_position: bool = False,
-                 cross_index_consensus_enabled: bool = True):
+                 cross_index_consensus_enabled: bool = True,
+                 include_macro: bool = True):
         """
         Args:
             initial_capital: 初始资金
@@ -72,6 +73,7 @@ class PortfolioBacktester:
             chart_save_dir: 图表保存目录
             use_smart_position: 启用 V9 智能仓位管理
             cross_index_consensus_enabled: V12 启用跨指数趋势共识
+            include_macro: V13 启用宏观因子
         """
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -85,6 +87,7 @@ class PortfolioBacktester:
         self.chart_save_dir = chart_save_dir
         self.use_smart_position = use_smart_position
         self.cross_index_consensus_enabled = cross_index_consensus_enabled
+        self.include_macro = include_macro
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
         self._portfolio_peak: float = initial_capital
@@ -185,7 +188,8 @@ class PortfolioBacktester:
             try:
                 # 始终使用全量历史数据生成信号，不受回测 start_date 限制
                 full_start = constant.HISTORY_START_DATE_MAP.get(code, '20100101')
-                analyzer = IndexAnalyzer(code, start_date=full_start, end_date=self.end_date)
+                analyzer = IndexAnalyzer(code, start_date=full_start, end_date=self.end_date,
+                                         include_macro=self.include_macro)
 
                 if len(analyzer.data) < 100:
                     print(f"数据不足 ({len(analyzer.data)} 行)，跳过")
