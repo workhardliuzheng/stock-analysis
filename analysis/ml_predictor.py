@@ -8,6 +8,9 @@
 - v1: 二分类模型 (XGBClassifier)，标签为次日涨跌方向
 - v2: 回归模型 (XGBRegressor)，标签为次日实际收益率
       + Optuna 超参数自动调优 (Walk-Forward 框架内)
+- v15: 多模型集成投票 (5个不同随机种子的XGBoost模型)
+      + 每个训练周期训练5个模型，预测取平均值
+      + 消除ML模型随机性导致的收益波动
 """
 
 import json
@@ -84,6 +87,10 @@ class MLPredictor:
     OPTUNA_N_TRIALS = 50       # 搜索次数
     OPTUNA_WF_FOLDS = 3        # Walk-Forward 折数 (用于调优评估)
 
+    # 多模型集成配置 (V15)
+    N_ENSEMBLE = 5             # 每个训练周期训练的模型数
+    ENSEMBLE_SEEDS = [42, 100, 200, 300, 500]  # 不同随机种子，确保模型多样性
+
     def __init__(self, model_params: Optional[dict] = None):
         if not HAS_XGBOOST:
             raise ImportError("xgboost 未安装，请运行: pip install xgboost")
@@ -92,6 +99,7 @@ class MLPredictor:
 
         self.model_params = model_params or self.DEFAULT_PARAMS.copy()
         self.model = None
+        self.models = []  # V15: 多模型集成 (5个不同种子)
         self.feature_columns: List[str] = []
         self._return_std = 1.0  # 收益率标准差，用于 sigmoid 缩放
         self._adaptive_buy_threshold = self.BUY_THRESHOLD
@@ -403,11 +411,13 @@ class MLPredictor:
             X_all = np.where(np.isfinite(X_all), X_all, np.nan).astype(np.float32)
             self.model_params = self.optimize_hyperparams(X_all, y_all)
 
-        # 滚动预测
-        print(f"  开始滚动预测（回归模式），共 {len(valid_indices)} 条有效数据...")
+        # 滚动预测（多模型集成投票）
+        print(f"  开始滚动预测（回归模式，{self.N_ENSEMBLE}模型集成投票），"
+              f"共 {len(valid_indices)} 条有效数据...")
         all_preds = []
         all_true = []
         train_count = 0
+        ensemble_trained = False
 
         for i, idx in enumerate(valid_indices):
             # 需要足够的历史数据才能训练
@@ -417,24 +427,37 @@ class MLPredictor:
             # 获取训练数据：只用当前时间点之前的数据
             train_indices = valid_indices[:i]
 
-            # 每隔一定步长重新训练模型（减少计算量）
+            # 每隔一定步长重新训练集成模型（减少计算量）
             if train_count == 0 or train_count >= self.TEST_SIZE:
                 X_train = featured_df.iloc[train_indices][self.feature_columns].values
                 y_train = labels.iloc[train_indices].values
 
                 X_train = np.where(np.isfinite(X_train), X_train, np.nan).astype(np.float32)
 
-                model = xgb.XGBRegressor(**self.model_params)
-                model.fit(X_train, y_train, verbose=False)
+                # 训练多个模型，不同随机种子
+                models = []
+                for seed in self.ENSEMBLE_SEEDS:
+                    params = self.model_params.copy()
+                    params['random_state'] = seed
+                    model = xgb.XGBRegressor(**params)
+                    model.fit(X_train, y_train, verbose=False)
+                    models.append(model)
+                
+                if not ensemble_trained:
+                    print(f"    第1个集成周期: 训练{self.N_ENSEMBLE}个模型 "
+                          f"(种子={self.ENSEMBLE_SEEDS})")
+                    ensemble_trained = True
+                    
                 train_count = 0
 
             train_count += 1
 
-            # 预测当前时间点
+            # 预测当前时间点（集成投票：取所有模型预测的平均值）
             X_pred = featured_df.iloc[[idx]][self.feature_columns].values
             X_pred = np.where(np.isfinite(X_pred), X_pred, np.nan).astype(np.float32)
 
-            pred = model.predict(X_pred)[0]
+            ensemble_preds = [m.predict(X_pred)[0] for m in models]
+            pred = np.mean(ensemble_preds)
             preds_all[idx] = pred
 
             # 记录用于验证指标计算
@@ -484,12 +507,18 @@ class MLPredictor:
             'model_type': 'regression',
         }
 
-        # 保存最终模型（用于预测未来）
+        # 保存最终集成模型（用于预测未来）
         valid_X = featured_df.loc[valid_mask, self.feature_columns].values
         valid_y = labels.loc[valid_mask].values
         valid_X = np.where(np.isfinite(valid_X), valid_X, np.nan).astype(np.float32)
-        self.model = xgb.XGBRegressor(**self.model_params)
-        self.model.fit(valid_X, valid_y, verbose=False)
+        self.models = []
+        for seed in self.ENSEMBLE_SEEDS:
+            params = self.model_params.copy()
+            params['random_state'] = seed
+            m = xgb.XGBRegressor(**params)
+            m.fit(valid_X, valid_y, verbose=False)
+            self.models.append(m)
+        self.model = self.models[0]  # 兼容旧接口
 
         # 构建结果 DataFrame
         result = featured_df.copy()
@@ -603,7 +632,7 @@ class MLPredictor:
         if auto_tune:
             self.model_params = self.optimize_hyperparams(X, y)
 
-        # Walk-Forward
+        # Walk-Forward (使用多模型集成)
         all_preds = []
         all_true = []
 
@@ -614,19 +643,32 @@ class MLPredictor:
             X_train, y_train = X[:train_end], y[:train_end]
             X_test, y_test = X[train_end:test_end], y[train_end:test_end]
 
-            model = xgb.XGBRegressor(**self.model_params)
-            model.fit(X_train, y_train, verbose=False)
-
-            preds = model.predict(X_test)
+            # 多模型集成：不同随机种子
+            preds_ensemble = []
+            for seed in self.ENSEMBLE_SEEDS:
+                params = self.model_params.copy()
+                params['random_state'] = seed
+                m = xgb.XGBRegressor(**params)
+                m.fit(X_train, y_train, verbose=False)
+                preds_ensemble.append(m.predict(X_test))
+            
+            # 集成投票：取平均值
+            preds = np.mean(preds_ensemble, axis=0)
 
             all_preds.extend(preds.tolist())
             all_true.extend(y_test.tolist())
 
             train_end = test_end
 
-        # 用全量数据训练最终模型
-        self.model = xgb.XGBRegressor(**self.model_params)
-        self.model.fit(X, y, verbose=False)
+        # 用全量数据训练最终集成模型
+        self.models = []
+        for seed in self.ENSEMBLE_SEEDS:
+            params = self.model_params.copy()
+            params['random_state'] = seed
+            m = xgb.XGBRegressor(**params)
+            m.fit(X, y, verbose=False)
+            self.models.append(m)
+        self.model = self.models[0]  # 兼容旧接口
 
         # 汇总验证结果
         all_true_arr = np.array(all_true)
@@ -673,7 +715,12 @@ class MLPredictor:
         X = result[self.feature_columns].values
         X = np.where(np.isfinite(X), X, np.nan).astype(np.float32)
 
-        preds = self.model.predict(X)
+        # 集成预测: 使用所有模型预测的平均值
+        if hasattr(self, 'models') and self.models:
+            all_model_preds = [m.predict(X) for m in self.models]
+            preds = np.mean(all_model_preds, axis=0)
+        else:
+            preds = self.model.predict(X)
 
         # 如果启用了反转模式，翻转预测值
         if self._flip_signals:
@@ -747,9 +794,10 @@ class MLPredictor:
     # ==================== 模型管理 ====================
 
     def save_model(self, filepath: str):
-        """保存模型和特征列名"""
+        """保存集成模型和特征列名"""
         os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
         data = {
+            'models': self.models if hasattr(self, 'models') and self.models else [self.model],
             'model': self.model,
             'feature_columns': self.feature_columns,
             'model_params': self.model_params,
@@ -759,10 +807,14 @@ class MLPredictor:
             pickle.dump(data, f)
 
     def load_model(self, filepath: str):
-        """加载模型和特征列名"""
+        """加载集成模型和特征列名"""
         with open(filepath, 'rb') as f:
             data = pickle.load(f)
-        self.model = data['model']
+        if 'models' in data:
+            self.models = data['models']
+        else:
+            self.models = [data['model']]
+        self.model = self.models[0]
         self.feature_columns = data['feature_columns']
         self.model_params = data.get('model_params', self.DEFAULT_PARAMS)
         self._return_std = data.get('return_std', 1.0)
@@ -770,11 +822,16 @@ class MLPredictor:
     # ==================== 特征重要性 ====================
 
     def get_feature_importance(self) -> pd.DataFrame:
-        """获取特征重要性排名"""
+        """获取集成模型的特征重要性排名（所有模型的平均）"""
         if self.model is None:
             return pd.DataFrame()
 
-        importance = self.model.feature_importances_
+        if hasattr(self, 'models') and self.models:
+            # 使用所有模型的平均特征重要性
+            all_importances = [m.feature_importances_ for m in self.models]
+            importance = np.mean(all_importances, axis=0)
+        else:
+            importance = self.model.feature_importances_
         fi_df = pd.DataFrame({
             'feature': self.feature_columns,
             'importance': importance

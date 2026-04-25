@@ -344,4 +344,8 @@ if __name__ == "__main__":
             use_smart_position=args.smart_position,
             cross_index_consensus=not args.no_cross_consensus,
             include_macro=not args.no_macro,
+            # 排除上证综指（作为市场观察指数，不持仓）
+            exclude_codes={'000001.SH'},
+            # 沪深300限仓10%（避免重仓低效贡献）
+            index_max_weight={'000300.SH': 0.10},
         )

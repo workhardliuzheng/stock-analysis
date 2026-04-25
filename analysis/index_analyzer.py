@@ -88,6 +88,9 @@ class IndexAnalyzer:
         self._macro_scorer = None
         self._macro_data = None  # 缓存宏观数据
         
+        # V15: 跨指数特征缓存（类级，所有实例共享）
+        self._cross_50_cache_loaded = False
+        
         # 加载数据
         self.mapper = SixtyIndexMapper()
         self.data = self._load_data()
@@ -160,8 +163,13 @@ class IndexAnalyzer:
         print(f"正在计算 {self.name} 的多因子评分...")
         self.data = self.multi_factor_scorer.calculate(self.data)
         
+        # V15: 跨指数特征（在ML之前添加市场锚特征）
+        # 使用上证50作为市场锚，为ML模型提供全局市场环境
+        self._apply_cross_index_features()
+        
         # ML 预测（使用滚动预测避免数据泄露）
         # V13: 宏观特征已合并到 self.data, ML 会自动使用
+        # V15: 跨指数特征（feat_cross_*）会自动被 prepare_features() 捕获
         if include_ml:
             try:
                 predictor = self._get_ml_predictor()
@@ -227,6 +235,65 @@ class IndexAnalyzer:
             print(f"  宏观因子处理失败: {e}，跳过")
             import traceback
             traceback.print_exc()
+    
+    def _apply_cross_index_features(self):
+        """
+        V15: 跨指数特征 - 使用上证50(000016.SH)作为市场锚
+        
+        将大盘蓝筹的趋势信息作为额外ML特征，帮助模型理解全局市场环境。
+        自动被ml_predictor的prepare_features()中的feat_*前缀捕获为ML输入特征。
+        
+        特征列表:
+        - feat_cross_50_ma50_pos: 上证50 close/MA50比值 (牛熊指示器, >1=牛市)
+        - feat_cross_50_mom_20: 上证50 20日涨幅 (中期动量)
+        - feat_cross_50_vol_20: 上证50 20日波动率 (市场风险水平)
+        """
+        if self.ts_code == '000016.SH':
+            return  # 上证50自身不需要跨指数特征
+        
+        try:
+            # 类级缓存，避免每个指数都重复加载上证50数据
+            if not self._cross_50_cache_loaded:
+                mapper = SixtyIndexMapper()
+                end_date = self.end_date or TimeUtils.get_current_date_str()
+                index_data = mapper.select_by_code_and_trade_round(
+                    '000016.SH', '20050101', end_date
+                )
+                data_list = []
+                for row in index_data:
+                    sd = ClassUtil.create_entities_from_data(StockData, row)
+                    data_list.append(sd.to_dict())
+                df = pd.DataFrame(data_list)
+                if 'trade_date' in df.columns and len(df) > 0:
+                    df['trade_date'] = pd.to_datetime(df['trade_date'])
+                    df = df.sort_values('trade_date').reset_index(drop=True)
+                
+                # 计算上证50的技术指标
+                df['close'] = pd.to_numeric(df['close'], errors='coerce')
+                ma50 = df['close'].rolling(50, min_periods=20).mean()
+                df['feat_cross_50_ma50_pos'] = df['close'] / ma50
+                df['feat_cross_50_mom_20'] = df['close'].pct_change(20) * 100
+                df['feat_cross_50_vol_20'] = df['close'].pct_change().rolling(20).std() * 100
+                
+                type(self)._cross_50_cache = df[
+                    ['trade_date', 'feat_cross_50_ma50_pos', 'feat_cross_50_mom_20', 'feat_cross_50_vol_20']
+                ].copy()
+                self._cross_50_cache_loaded = True
+            
+            # 合并到当前数据
+            cross_50 = type(self)._cross_50_cache.copy()
+            self.data = pd.merge(self.data, cross_50, on='trade_date', how='left')
+            
+            # 向前填充（交易日不完全一致）
+            cross_cols = ['feat_cross_50_ma50_pos', 'feat_cross_50_mom_20', 'feat_cross_50_vol_20']
+            for c in cross_cols:
+                if c in self.data.columns:
+                    self.data[c] = self.data[c].ffill().fillna(0.0)
+            
+            print(f"  [V15] 跨指数特征: 已添加上证50市场锚 ({len(cross_cols)}个特征)")
+            
+        except Exception as e:
+            print(f"  [V15] 跨指数特征处理失败: {e}，跳过")
     
     def _get_ml_predictor(self):
         """延迟加载 ML 预测器"""
@@ -616,6 +683,8 @@ def portfolio_backtest(start_date: str = '20200101',
                        use_smart_position: bool = False,
                        cross_index_consensus: bool = True,
                        include_macro: bool = True,
+                       exclude_codes: Optional[set] = None,
+                       index_max_weight: Optional[Dict[str, float]] = None,
                        **kwargs) -> dict:
     """
     运行组合级回测
@@ -630,6 +699,8 @@ def portfolio_backtest(start_date: str = '20200101',
         use_smart_position: 启用 V10 智能仓位管理
         cross_index_consensus: V12 启用跨指数趋势共识
         include_macro: V13 启用宏观因子
+        exclude_codes: 从交易组合中排除的指数代码集合
+        index_max_weight: 各指数最大仓位上限字典
         **kwargs: 兼容 main.py 传入的其他参数
 
     Returns:
@@ -643,6 +714,8 @@ def portfolio_backtest(start_date: str = '20200101',
         use_smart_position=use_smart_position,
         cross_index_consensus_enabled=cross_index_consensus,
         include_macro=include_macro,
+        exclude_codes=exclude_codes,
+        index_max_weight=index_max_weight,
     )
     return bt.run()
 

@@ -58,7 +58,9 @@ class PortfolioBacktester:
                  chart_save_dir: str = 'records',
                  use_smart_position: bool = False,
                  cross_index_consensus_enabled: bool = True,
-                 include_macro: bool = True):
+                 include_macro: bool = True,
+                 exclude_codes: Optional[set] = None,
+                 index_max_weight: Optional[Dict[str, float]] = None):
         """
         Args:
             initial_capital: 初始资金
@@ -74,6 +76,8 @@ class PortfolioBacktester:
             use_smart_position: 启用 V9 智能仓位管理
             cross_index_consensus_enabled: V12 启用跨指数趋势共识
             include_macro: V13 启用宏观因子
+            exclude_codes: 从交易组合中排除的指数代码集合（但仍加载数据供跨指数共识）
+            index_max_weight: 各指数最大仓位上限字典，如 {'000300.SH': 0.05}
         """
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -88,6 +92,8 @@ class PortfolioBacktester:
         self.use_smart_position = use_smart_position
         self.cross_index_consensus_enabled = cross_index_consensus_enabled
         self.include_macro = include_macro
+        self.exclude_codes = exclude_codes or set()
+        self.index_max_weight = index_max_weight or {}
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
         self._portfolio_peak: float = initial_capital
@@ -159,6 +165,12 @@ class PortfolioBacktester:
             common_dates, sim_result, metrics, aligned_data
         )
         metrics['chart_path'] = chart_path
+
+        # 5b. 生成买卖详情图
+        trade_detail_path = self._generate_trade_detail_chart(
+            common_dates, sim_result, metrics, aligned_data
+        )
+        metrics['trade_detail_chart_path'] = trade_detail_path
 
         # 输出报告
         self._print_report(metrics)
@@ -609,9 +621,12 @@ class PortfolioBacktester:
         """
         n_days = len(common_dates)
         codes = list(aligned_data.keys())
+        # 排除的指数代码不参与交易，但仍参与跨指数共识
+        tradeable_codes = [c for c in codes if c not in self.exclude_codes]
+        n_tradeable = len(tradeable_codes)
 
         portfolio_value = self.initial_capital
-        index_weights = {code: 0.0 for code in codes}
+        index_weights = {code: 0.0 for code in tradeable_codes}
         prev_target_weights = None
 
         # V10: 重置熔断状态
@@ -636,23 +651,39 @@ class PortfolioBacktester:
         index_weights_history = []
 
         # 跟踪每指数贡献
-        index_cumulative_contribution = {code: 0.0 for code in codes}
-        index_avg_weight_sum = {code: 0.0 for code in codes}
+        index_cumulative_contribution = {code: 0.0 for code in tradeable_codes}
+        index_avg_weight_sum = {code: 0.0 for code in tradeable_codes}
 
-        # 基准: 等权买入持有
+        # 基准: 等权买入持有 (仅可交易指数)
         benchmark_value = self.initial_capital
-        benchmark_weight = 1.0 / len(codes)
+        benchmark_weight = 1.0 / n_tradeable if n_tradeable > 0 else 0.0
         benchmark_values = [benchmark_value]
 
         for t in range(n_days):
-            # 计算今日目标权重
+            # 计算今日目标权重 (仅可交易指数)
             if self.use_smart_position and self._smart_managers:
                 target_weights = self._compute_smart_weights(
                     aligned_data, t, signal_col, codes)
             else:
                 target_weights = self._compute_daily_weights(aligned_data, t, signal_col)
 
-            # V12: 跨指数趋势共识过滤
+            # 排除指数权重强制归零（释放的权重变为现金，降低风险敞口）
+            for code in self.exclude_codes:
+                target_weights.pop(code, None)
+
+            # 应用单指数最大仓位上限
+            for code in list(target_weights.keys()):
+                max_w = self.index_max_weight.get(code, 1.0)
+                if target_weights[code] > max_w:
+                    target_weights[code] = max_w
+
+            # 排除+限仓释放的权重重新分配，保持总仓位水平
+            remaining_sum = sum(target_weights.values())
+            if remaining_sum > 0 and remaining_sum < self.total_position_cap * 0.95:
+                scale = self.total_position_cap / remaining_sum
+                target_weights = {c: w * scale for c, w in target_weights.items()}
+
+            # V12: 跨指数趋势共识过滤 (使用全部代码，含排除指数)
             if self.cross_index_consensus_enabled:
                 target_weights = self._apply_cross_index_consensus(
                     aligned_data, t, target_weights)
@@ -661,7 +692,7 @@ class PortfolioBacktester:
             if t > 0 and prev_target_weights is not None:
                 # 计算调仓佣金
                 day_commission = 0.0
-                for code in codes:
+                for code in tradeable_codes:
                     weight_change = abs(prev_target_weights.get(code, 0.0) - index_weights.get(code, 0.0))
                     if weight_change > self.min_rebalance_threshold:
                         cost = weight_change * portfolio_value * self.commission_rate
@@ -674,7 +705,7 @@ class PortfolioBacktester:
 
             # 计算今日组合收益
             daily_return = 0.0
-            for code in codes:
+            for code in tradeable_codes:
                 w = index_weights.get(code, 0.0)
                 if w > 0:
                     df = aligned_data[code]
@@ -690,9 +721,9 @@ class PortfolioBacktester:
                 portfolio_values.append(portfolio_value)
                 daily_returns_list.append(daily_return)
 
-                # 基准收益
+                # 基准收益 (仅可交易指数)
                 bm_return = 0.0
-                for code in codes:
+                for code in tradeable_codes:
                     df = aligned_data[code]
                     pct = df.iloc[t].get('pct_chg', 0)
                     if pd.notna(pct):
@@ -702,7 +733,7 @@ class PortfolioBacktester:
 
             # 记录权重
             index_weights_history.append(dict(index_weights))
-            for code in codes:
+            for code in tradeable_codes:
                 index_avg_weight_sum[code] += index_weights.get(code, 0.0)
 
             # 记录买卖事件
@@ -725,16 +756,11 @@ class PortfolioBacktester:
                         'day_idx': t,
                     })
 
-            # V10: 组合回撤熔断 (暂时禁用 - regime转换+背离已提供足够保护)
-            # if t > 0 and self.use_smart_position:
-            #     target_weights = self._apply_drawdown_circuit_breaker(
-            #         portfolio_value, target_weights)
-
             prev_target_weights = target_weights
 
         # 计算平均权重
         index_avg_weights = {
-            code: index_avg_weight_sum[code] / n_days for code in codes
+            code: index_avg_weight_sum[code] / n_days for code in tradeable_codes
         }
 
         return {
@@ -998,6 +1024,145 @@ class PortfolioBacktester:
         fig.savefig(filepath, dpi=200, bbox_inches='tight')
         plt.close(fig)
         print(f"  图表已保存: {filepath}")
+        return filepath
+
+    def _generate_trade_detail_chart(self,
+                                     common_dates: list,
+                                     sim_result: dict,
+                                     metrics: dict,
+                                     aligned_data: Dict[str, pd.DataFrame]) -> str:
+        """
+        生成每指数买卖详情图: 8个子图, 每个显示收盘价+仓位权重+买卖标记
+
+        Returns:
+            str: 图表保存路径
+        """
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            import matplotlib.dates as mdates
+            from matplotlib.patches import Patch
+            from matplotlib.lines import Line2D
+        except ImportError:
+            print("  [WARNING] matplotlib 不可用，跳过买卖详情图")
+            return ''
+
+        from entity import constant
+
+        plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'Arial Unicode MS', 'DejaVu Sans']
+        plt.rcParams['axes.unicode_minus'] = False
+
+        index_weights_history = sim_result.get('index_weights_history', [])
+        if not index_weights_history:
+            print("  [WARNING] 无权重历史数据，跳过买卖详情图")
+            return ''
+
+        # 获取所有指数代码 (按 constant 中的顺序)
+        codes = [c for c in constant.TS_CODE_LIST if c in aligned_data]
+        n_codes = len(codes)
+        if n_codes == 0:
+            return ''
+
+        # 布局: 4行2列
+        n_rows = (n_codes + 1) // 2
+        fig, axes = plt.subplots(n_rows, 2, figsize=(20, n_rows * 3.5), squeeze=False)
+
+        portfolio_values = sim_result['portfolio_values']
+        n_days = min(len(common_dates), len(portfolio_values), len(index_weights_history))
+        plot_dates = [pd.to_datetime(d) for d in common_dates[:n_days]]
+
+        for i, code in enumerate(codes):
+            row, col = i // 2, i % 2
+            ax1 = axes[row][col]
+            name = constant.TS_CODE_NAME_DICT.get(code, code)
+
+            df = aligned_data[code]
+            close_prices = df['close'].values[:n_days]
+
+            # 提取该指数每日权重
+            weights = []
+            for day_idx in range(n_days):
+                w = index_weights_history[day_idx].get(code, 0.0)
+                weights.append(w)
+            weights = np.array(weights)
+
+            # ---- 左 Y 轴: 收盘价 ----
+            ax1.plot(plot_dates, close_prices, color='#2C3E50', linewidth=1.0,
+                     label='收盘价', zorder=3)
+            ax1.set_ylabel('价格', fontsize=8, color='#2C3E50')
+            ax1.tick_params(axis='y', labelsize=7, labelcolor='#2C3E50')
+
+            # ---- 右 Y 轴: 仓位权重 (填充面积) ----
+            ax2 = ax1.twinx()
+            ax2.fill_between(plot_dates, 0, weights, alpha=0.25, color='#3498DB',
+                             label='仓位', zorder=1)
+            ax2.set_ylim(0, max(1.0, weights.max() * 1.2) if weights.max() > 0 else 1.0)
+            ax2.set_ylabel('仓位', fontsize=8, color='#3498DB')
+            ax2.tick_params(axis='y', labelsize=7, labelcolor='#3498DB')
+
+            # ---- 检测买卖点 ----
+            buy_dates, buy_prices = [], []
+            sell_dates, sell_prices = [], []
+            threshold = 0.02  # 权重变化阈值 2%
+
+            for j in range(1, n_days):
+                delta = weights[j] - weights[j - 1]
+                if delta > threshold:
+                    buy_dates.append(plot_dates[j])
+                    buy_prices.append(close_prices[j])
+                elif delta < -threshold:
+                    sell_dates.append(plot_dates[j])
+                    sell_prices.append(close_prices[j])
+
+            if buy_dates:
+                ax1.scatter(buy_dates, buy_prices, marker='^', color='#E74C3C',
+                            s=30, zorder=10, edgecolors='darkred', linewidth=0.5,
+                            label=f'买入({len(buy_dates)})')
+            if sell_dates:
+                ax1.scatter(sell_dates, sell_prices, marker='v', color='#27AE60',
+                            s=30, zorder=10, edgecolors='darkgreen', linewidth=0.5,
+                            label=f'卖出({len(sell_dates)})')
+
+            # ---- 标题和图例 ----
+            avg_w = weights.mean() * 100
+            # 计算该指数的收益贡献
+            contrib = sim_result.get('index_cumulative_contribution', {}).get(code, 0.0)
+            ax1.set_title(f'{name}  (平均仓位 {avg_w:.1f}%, 贡献 {contrib:+.1f}%)',
+                          fontsize=9, fontweight='bold')
+
+            # 合并图例
+            h1, l1 = ax1.get_legend_handles_labels()
+            h2, l2 = ax2.get_legend_handles_labels()
+            ax1.legend(h1 + h2, l1 + l2, loc='upper left', fontsize=6,
+                       framealpha=0.7, ncol=2)
+
+            # X 轴
+            ax1.xaxis.set_major_formatter(mdates.DateFormatter('%y-%m'))
+            ax1.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+            plt.setp(ax1.xaxis.get_majorticklabels(), rotation=30, ha='right', fontsize=6)
+            ax1.grid(True, alpha=0.2)
+
+        # 隐藏多余的子图
+        for i in range(n_codes, n_rows * 2):
+            row, col = i // 2, i % 2
+            axes[row][col].set_visible(False)
+
+        # 总标题
+        title = (f"各指数买卖详情: {metrics['start_date']} ~ {metrics['end_date']}  "
+                 f"组合收益 {metrics['total_return']:+.2f}%  "
+                 f"最大回撤 -{metrics['max_drawdown']:.2f}%  "
+                 f"夏普 {metrics['sharpe_ratio']:.2f}")
+        fig.suptitle(title, fontsize=13, fontweight='bold', y=1.01)
+        fig.tight_layout()
+
+        # 保存
+        os.makedirs(self.chart_save_dir, exist_ok=True)
+        timestamp = datetime.now().strftime('%Y%m%d')
+        filepath = os.path.join(self.chart_save_dir, f'portfolio_trade_detail_{timestamp}.png')
+        fig.savefig(filepath, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+        print(f"  买卖详情图已保存: {filepath}")
         return filepath
 
     # ==================== 报告输出 ====================

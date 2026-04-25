@@ -4,3 +4,16 @@ database:
   user: root       # 替换为你的数据库用户名
   password: liuzheng  # 替换为你的数据库密码
 token: 49dd4d99eb45ca99bf9c6e13690b6b79daa756974e0fa235b6add6c3
+
+email:
+  smtp_server: smtp.163.com
+  smtp_port: 465
+  smtp_user: workhardliuzheng@163.com
+  smtp_password: UBnHVwGi2QG3JEA2
+  from_email: workhardliuzheng@163.com
+  default_recipients:
+    - workhardliuzheng@163.com
+  subject_prefix: "[A股投资顾问]"
+
+report:
+  output_dir: reports
