@@ -128,6 +128,21 @@ class SignalGenerator:
         confidence = factor_score / 100.0 * 0.4 + ml_prob * 0.6
         confidence = max(0.0, min(1.0, confidence))
 
+        # V16: 多时间框架联动 - 周线趋势过滤
+        weekly_filter = row.get('weekly_filter', 'pass')
+        if weekly_filter == 'block_buy':
+            if signal == 'BUY':
+                signal = 'HOLD'
+                confidence = confidence * 0.5  # 降低置信度
+        elif weekly_filter == 'block_all':
+            if signal == 'BUY':
+                signal = 'HOLD'
+                confidence = confidence * 0.3
+            elif signal == 'HOLD':
+                # 周线强空时，HOLD也降级为SELL（强制减仓）
+                signal = 'SELL'
+                confidence = max(confidence, 0.6)  # 强制卖出的置信度
+
         return signal, round(confidence, 3)
 
     @staticmethod

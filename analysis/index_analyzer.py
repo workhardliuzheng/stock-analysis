@@ -194,6 +194,9 @@ class IndexAnalyzer:
             self.data['ml_probability_raw'] = 0.5
             self.data['ml_signal'] = 'HOLD'
         
+        # V16: 多时间框架联动 - 周线趋势过滤
+        self._apply_weekly_filter()
+        
         # 信号整合
         print(f"正在生成 {self.name} 的最终信号...")
         self.data = self.signal_generator.generate(self.data)
@@ -295,7 +298,79 @@ class IndexAnalyzer:
         except Exception as e:
             print(f"  [V15] 跨指数特征处理失败: {e}，跳过")
     
-    def _get_ml_predictor(self):
+    def _apply_weekly_filter(self):
+        """
+        V16: 多时间框架联动 - 周线趋势作为日线信号的过滤条件
+        
+        核心逻辑:
+        1. 将日线数据重采样为周线（取每周最后一个交易日）
+        2. 计算周线MA5 (约5周=25交易日) 和周线MA10 (约10周=50交易日)
+        3. 判断周线趋势: bullish (close>MA5), bearish (close<MA5), strong_bearish (close<MA5<MA10)
+        4. 映射回日线，作为信号过滤条件
+        
+        信号过滤规则:
+        - bearish周线: 日线BUY信号降级为HOLD
+        - strong_bearish周线: BUY→HOLD, HOLD→SELL（强制退出）
+        """
+        df = self.data.copy()
+        if len(df) < 30:
+            self.data['weekly_filter'] = 'pass'
+            self.data['weekly_trend'] = 'neutral'
+            return
+        
+        # 确保 trade_date 是 datetime
+        df['trade_date'] = pd.to_datetime(df['trade_date'])
+        df = df.sort_values('trade_date').reset_index(drop=True)
+        
+        # ★ 周线重采样：按ISO周取最后一个交易日的收盘价
+        # 使用 isocalendar 获取周编号
+        iso = df['trade_date'].dt.isocalendar()
+        df['iso_year'] = iso['year'].astype(int)
+        df['iso_week'] = iso['week'].astype(int)
+        
+        # 每周最后一条记录（该周最后一个交易日）
+        weekly = df.groupby(['iso_year', 'iso_week'], as_index=False).agg({
+            'close': 'last',   # 当周收盘价
+            'high': 'max',     # 当周最高
+            'low': 'min',      # 当周最低
+        })
+        weekly = weekly.sort_values(['iso_year', 'iso_week']).reset_index(drop=True)
+        
+        # 周线MA5 和 MA10（5周≈25交易日=1月, 10周≈50交易日=2月）
+        weekly['weekly_ma5'] = weekly['close'].rolling(window=5, min_periods=3).mean()
+        weekly['weekly_ma10'] = weekly['close'].rolling(window=10, min_periods=5).mean()
+        
+        # 判断周线趋势
+        conditions = [
+            (weekly['close'] < weekly['weekly_ma5']) & (weekly['close'] < weekly['weekly_ma10']),
+            (weekly['close'] < weekly['weekly_ma5']),
+        ]
+        choices = ['strong_bearish', 'bearish']
+        weekly['weekly_trend'] = np.select(conditions, choices, default='bullish')
+        
+        # 合并回日线
+        df = df.merge(
+            weekly[['iso_year', 'iso_week', 'weekly_trend']],
+            on=['iso_year', 'iso_week'], how='left'
+        )
+        df['weekly_trend'] = df['weekly_trend'].ffill().fillna('bullish')
+        
+        # 设置过滤条件
+        df['weekly_filter'] = 'pass'
+        df.loc[df['weekly_trend'] == 'bearish', 'weekly_filter'] = 'block_buy'
+        df.loc[df['weekly_trend'] == 'strong_bearish', 'weekly_filter'] = 'block_all'
+        
+        # 清理临时列
+        df = df.drop(columns=['iso_year', 'iso_week'])
+        
+        # 统计信息
+        trend_counts = df['weekly_trend'].value_counts()
+        bullish_pct = trend_counts.get('bullish', 0) / len(df) * 100
+        bearish_pct = trend_counts.get('bearish', 0) / len(df) * 100
+        strong_bearish_pct = trend_counts.get('strong_bearish', 0) / len(df) * 100
+        print(f"  [V16] 周线趋势分布: bullish={bullish_pct:.0f}% bearish={bearish_pct:.0f}% strong_bearish={strong_bearish_pct:.0f}%")
+        
+        self.data = df
         """延迟加载 ML 预测器"""
         if self._ml_predictor is None:
             from analysis.ml_predictor import MLPredictor
