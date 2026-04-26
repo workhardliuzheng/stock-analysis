@@ -257,6 +257,8 @@ class MetaLearner:
         """
         使用最优权重生成融合信号
         
+        V16-opt: 使用去均值ML预测值消除系统性偏差
+        
         Args:
             df: DataFrame
         
@@ -273,11 +275,28 @@ class MetaLearner:
         df['ml_signal_num'] = df['ml_signal'].map(ml_signal_map).fillna(0)
         df['ml_predicted_return'] = df['ml_predicted_return'].fillna(0)
         
+        # V16-opt: 使用去均值ML预测值消除系统性偏差
+        # ml_predicted_return 可能有系统性偏正/偏负（回归模型偏差）
+        # 而 ml_predicted_return_demeaned（expanding均值）仅保留相对排序信息
+        # 同时使用预测绝对值作为置信度权重：|预测值|大→高置信度
+        ml_col = 'ml_predicted_return_demeaned'
+        if ml_col not in df.columns:
+            ml_col = 'ml_predicted_return'
+            df[ml_col] = df['ml_predicted_return'].fillna(0)
+        
+        ml_return = df[ml_col].values
+        
+        # 使用预测绝对值作为置信度: 大预测→高置信度
+        ml_abs = np.abs(ml_return)
+        ml_abs_p95 = np.percentile(ml_abs, 95) if len(ml_abs) > 0 and np.nanmax(ml_abs) > 0 else 0.005
+        if ml_abs_p95 < 0.001:
+            ml_abs_p95 = 0.005  # 兜底
+        
         # 计算融合评分 (加权平均)
         df['fused_score'] = (
             self.best_weights['factor_score'] * df['factor_score'] +
             self.best_weights['factor_signal'] * df['factor_signal_num'] * 50 +  # 乘以50归一化到0-100
-            self.best_weights['ml_return'] * df['ml_predicted_return'] * 100 +
+            self.best_weights['ml_return'] * ml_return * 100 +
             self.best_weights['ml_signal'] * df['ml_signal_num'] * 50
         )
         
