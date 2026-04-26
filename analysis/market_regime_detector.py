@@ -171,7 +171,7 @@ class MarketRegimeDetector:
 
         # 统计
         regime_counts = result['regime_label'].value_counts()
-        print(f"[OK] V13 市场状态识别完成")
+        print(f"[OK] V16 市场状态识别完成")
         for regime, count in regime_counts.items():
             pct = count / len(result) * 100
             print(f"  {regime}: {count}天 ({pct:.1f}%)")
@@ -414,7 +414,7 @@ class MarketRegimeDetector:
 
         n_overridden = strong_bias.sum() + moderate_bias.sum()
         if n_overridden > 0:
-            print(f"  V12 动量偏置: {n_overridden}天覆盖为BEAR_TREND")
+            print(f"  V16 动量偏置: {n_overridden}天覆盖为BEAR_TREND")
 
         return labels
 
@@ -546,7 +546,7 @@ class MarketRegimeDetector:
         labels[macro_bullish_bottom] = BEAR_LATE
 
         if n_bear_override > 0 or n_late_override > 0:
-            print(f"  V13 宏观偏置: {n_bear_override}天->BEAR_TREND, "
+            print(f"  V16 宏观偏置: {n_bear_override}天->BEAR_TREND, "
                   f"{n_late_override}天->BEAR_LATE")
 
         return labels

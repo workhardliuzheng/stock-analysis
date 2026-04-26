@@ -120,7 +120,7 @@ class PortfolioBacktester:
         if self.use_smart_position:
             print(f"  仓位模式: V9 智能仓位管理")
         if self.cross_index_consensus_enabled:
-            print(f"  V12跨指数共识: 启用")
+            print(f"  V16跨指数共识: 启用")
         print("=" * 70)
 
         # 1. 加载所有指数数据

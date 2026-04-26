@@ -94,7 +94,7 @@ class MacroFactorScorer:
         if valid_count > 0:
             avg_score = result['macro_score'].mean()
             latest = result['macro_score'].iloc[-1] if len(result) > 0 else 50
-            print(f"  [V13] 宏观因子评分完成: "
+            print(f"  [V16] 宏观因子评分完成: "
                   f"最新={latest:.1f}, 均值={avg_score:.1f}, "
                   f"利率={rate_score.iloc[-1]:.1f}, "
                   f"资金流向={flow_score.iloc[-1]:.1f}, "

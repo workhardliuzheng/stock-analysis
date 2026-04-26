@@ -73,7 +73,7 @@ class MacroFactorCollector:
         if not force_refresh and self._is_cached(start_date, end_date):
             return self._filter_cache(start_date, end_date)
 
-        print(f"  [V13] 采集宏观因子数据 ({start_date} ~ {end_date})...")
+        print(f"  [V16] 采集宏观因子数据 ({start_date} ~ {end_date})...")
 
         all_data = {}
 
@@ -125,7 +125,7 @@ class MacroFactorCollector:
 
         n_sources = len(all_data)
         n_cols = len([c for c in merged.columns if c != 'trade_date'])
-        print(f"  [V13] 宏观数据采集完成: {n_sources}个数据源, {n_cols}个指标, {len(merged)}行")
+        print(f"  [V16] 宏观数据采集完成: {n_sources}个数据源, {n_cols}个指标, {len(merged)}行")
 
         return self._filter_cache(start_date, end_date)
 

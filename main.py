@@ -144,7 +144,7 @@ def run_daily_workflow(to_emails=None):
             [sys.executable, __file__, 'sync', '--index-only'],
             capture_output=True,
             text=True,
-            timeout=300
+            timeout=900
         )
         if result.returncode == 0:
             print("[OK] 数据同步成功")

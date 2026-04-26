@@ -290,10 +290,10 @@ class IndexAnalyzer:
                 if c in self.data.columns:
                     self.data[c] = self.data[c].ffill().fillna(0.0)
             
-            print(f"  [V15] 跨指数特征: 已添加上证50市场锚 ({len(cross_cols)}个特征)")
+            print(f"  [V16] 跨指数特征: 已添加上证50市场锚 ({len(cross_cols)}个特征)")
             
         except Exception as e:
-            print(f"  [V15] 跨指数特征处理失败: {e}，跳过")
+            print(f"  [V16] 跨指数特征处理失败: {e}，跳过")
     
     def _get_ml_predictor(self):
         """延迟加载 ML 预测器"""
