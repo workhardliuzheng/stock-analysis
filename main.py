@@ -205,15 +205,16 @@ def run_daily_workflow(to_emails=None):
         return
 
     # 4. 发送邮件
-    if to_emails and report_result:
-        print(f"\n[STEP 4] 发送邮件至 {to_emails}...")
+    if report_result:
+        to_emails_display = to_emails if to_emails else "默认收件人"
+        print(f"\n[STEP 4] 发送邮件至 {to_emails_display}...")
         print("-" * 40)
 
         try:
             from report.email_sender import EmailSender
             sender = EmailSender()
 
-            to_list = [e.strip() for e in to_emails.split(',')]
+            to_list = [e.strip() for e in to_emails.split(',')] if to_emails else None
 
             subject = datetime.now().strftime('%Y-%m-%d') + " 市场分析报告"
             success, msg = sender.send(
@@ -225,11 +226,12 @@ def run_daily_workflow(to_emails=None):
 
             if not success:
                 print(f"[WARNING] 邮件发送未成功: {msg}")
+            else:
+                print(f"[OK] 邮件发送成功")
         except Exception as e:
             print(f"[ERROR] 邮件发送失败: {str(e)}")
-    elif not to_emails:
-        print("\n[SKIP] 未指定收件人，跳过邮件发送")
-        print("  提示: 使用 --to-emails user@example.com 指定收件人")
+    else:
+        print("\n[SKIP] 报告生成未完成，跳过邮件发送")
 
     print("\n" + "=" * 60)
     print("[DONE] 每日工作流完成!")
