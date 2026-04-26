@@ -176,7 +176,7 @@ class IndexAnalyzer:
                 print(f"正在滚动预测 {self.name}（回归模式，避免数据泄露）...")
                 self.data, metrics = predictor.train_and_predict(self.data, auto_tune=auto_tune)
                 print(f"  ML验证指标: {metrics}")
-            except ImportError as e:
+            except (ImportError, AttributeError, Exception) as e:
                 print(f"  ML模块不可用({e})，跳过ML预测")
                 self.data['ml_predicted_return'] = 0.0
                 self.data['ml_probability'] = 0.5
@@ -371,6 +371,8 @@ class IndexAnalyzer:
         print(f"  [V16] 周线趋势分布: bullish={bullish_pct:.0f}% bearish={bearish_pct:.0f}% strong_bearish={strong_bearish_pct:.0f}%")
         
         self.data = df
+    
+    def _get_ml_predictor(self):
         """延迟加载 ML 预测器"""
         if self._ml_predictor is None:
             from analysis.ml_predictor import MLPredictor
