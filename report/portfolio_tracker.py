@@ -177,7 +177,7 @@ class PortfolioTracker:
             code = sig.get('ts_code', '')
             signal_map[code] = sig
 
-        # 3. 计算价格漂移 + 信号操作
+        # 3. 投资计划：价格漂移 → 信号 → 优先级排序 → 现金分配
         today_rows = []
         total_mv_after = Decimal('0.00')
         total_cost = Decimal('0.00')
@@ -187,39 +187,73 @@ class PortfolioTracker:
         prev_total_mv = prev_positions.get('_total_mv', Decimal('0'))
         prev_cash_mv = prev_positions.get('_cash_mv', Decimal('0'))
 
-        # 逐指数处理 - 仅跟踪已有持仓的指数
+        # ----- 3a. 计算所有持仓指数的价格漂移 -----
+        drifted_positions = {}
         tracked_in_db = [k for k in prev_positions.keys()
                         if k not in ('_total_mv', '_cash_mv', '_cash_pct')]
         for code in tracked_in_db:
             prev = prev_positions[code]
             sig = signal_map.get(code, {})
 
-            name = TS_CODE_NAME.get(code, code)
-            prev_cost = prev.get('cost', Decimal('0'))
-            prev_mv = prev.get('mv', Decimal('0'))
-            prev_weight = prev.get('weight', Decimal('0'))
-
-            # 涨跌幅
             pct_chg = Decimal(str(sig.get('pct_chg', 0))) if sig else Decimal('0')
-
-            # 价格漂移
+            prev_mv = prev.get('mv', Decimal('0'))
             drifted_mv = prev_mv * (Decimal('1') + pct_chg / Decimal('100'))
 
-            # 信号
+            drifted_positions[code] = {
+                'mv': drifted_mv,
+                'cost': prev.get('cost', Decimal('0')),
+                'weight': prev.get('weight', Decimal('0')),
+            }
+
+        # ----- 3b. 使用投资计划器分配操作 -----
+        # 构造 current_positions 字典 (供计划器使用)
+        planner_positions = {}
+        for code in tracked_in_db:
+            dp = drifted_positions[code]
+            planner_positions[code] = {'mv': dp['mv'], 'weight': dp['weight']}
+
+        from report.investment_planner import plan_investments, format_plan_text
+        planned_ops, cash_after = plan_investments(
+            signals_list=signals_list,
+            current_positions=planner_positions,
+            available_cash=prev_cash_mv,
+            total_capital=TOTAL_CAPITAL,
+        )
+
+        # 打印投资计划
+        print(format_plan_text(planned_ops, prev_cash_mv, cash_after, TOTAL_CAPITAL))
+
+        # ----- 3c. 执行计划：按优先级顺序应用操作 -----
+        # 建立 {ts_code: planned_op} 映射
+        plan_map = {op['ts_code']: op for op in planned_ops}
+
+        for code in tracked_in_db:
+            prev = prev_positions[code]
+            sig = signal_map.get(code, {})
+            dp = drifted_positions[code]
+            plan_op = plan_map.get(code, {})
+
+            name = TS_CODE_NAME.get(code, code)
+            drifted_mv = dp['mv']
+            prev_cost = prev.get('cost', Decimal('0'))
+            prev_weight = prev.get('weight', Decimal('0'))
+
+            # 信号字段
             signal = sig.get('final_signal', 'HOLD') if sig else 'HOLD'
             confidence = Decimal(str(sig.get('final_confidence', 0.5))) if sig else Decimal('0.5')
             strength = Decimal(str(sig.get('signal_strength', 0))) if sig else Decimal('0')
             factor_score = Decimal(str(sig.get('factor_score', 50))) if sig else Decimal('50')
 
-            # 操作判定
-            action, action_value = self._calc_action(signal, confidence, drifted_mv, prev_cost, prev_weight)
+            # 从投资计划获取操作
+            action = plan_op.get('action', '持有')
+            action_value = plan_op.get('value', Decimal('0'))
 
             # 操作后市值
             new_mv = drifted_mv + action_value
             total_cost += prev_cost + (action_value if action_value > 0 else Decimal('0'))
             total_mv_after += new_mv
 
-            if action != '持有':
+            if action not in ('持有', '等待'):
                 operations.append({
                     'ts_code': code,
                     'name': name,
@@ -242,31 +276,11 @@ class PortfolioTracker:
                 'factor_score': factor_score,
                 'action': action,
                 'action_value': action_value,
-                'pct_chg': pct_chg,
+                'pct_chg': Decimal(str(sig.get('pct_chg', 0))) if sig else Decimal('0'),
             })
 
-        # 现金约束：买入金额不能超过可用现金
-        total_cash_outflow = sum(r['action_value'] for r in today_rows if r['action_value'] > 0)  # 买入消耗现金
-        total_cash_inflow = sum(r['action_value'] for r in today_rows if r['action_value'] < 0)   # 卖出回流现金
-        available_cash = prev_cash_mv + abs(total_cash_inflow)
-
-        if total_cash_outflow > available_cash and available_cash > Decimal('0'):
-            # 买入超额，按比例缩小所有买入操作
-            ratio = (available_cash / total_cash_outflow)
-            print(f"  [CASH] 买入 {total_cash_outflow:.2f} > 可用 {available_cash:.2f}, 缩放比例 {ratio:.4f}")
-            for r in today_rows:
-                if r['action_value'] > 0:
-                    r['action_value'] = (r['action_value'] * ratio).quantize(Decimal('0.01'))
-                    r['new_mv'] = r['drifted_mv'] + r['action_value']
-                    # 同步更新 operations
-                    for op in operations:
-                        if op['ts_code'] == r['ts_code']:
-                            op['value'] = r['action_value']
-                            op['new_mv'] = r['new_mv']
-                            break
-            total_cash_outflow = sum(r['action_value'] for r in today_rows if r['action_value'] > 0)
-
-        cash_mv = prev_cash_mv + abs(total_cash_inflow) - total_cash_outflow
+        # 现金 = 计划器计算的最终现金
+        cash_mv = cash_after
         if cash_mv < Decimal('0'):
             cash_mv = Decimal('0')
 
@@ -469,14 +483,19 @@ class PortfolioTracker:
         has_action = any(r.get('action') not in ('持有', None, 'INIT') for r in state)
         if has_action:
             lines.append("今日操作:")
+
+            # 先显示实际买卖
             for r in state:
                 action = r.get('action', '')
-                if action and action not in ('持有', 'INIT', None):
-                    mv_before = float(r.get('market_value', 0)) + abs(float(r.get('action_value', 0)))
-                    if r.get('action_value', 0) < 0:
-                        mv_before = float(r.get('market_value', 0)) - abs(float(r.get('action_value', 0)))
+                if action in ('建仓', '加仓', '减仓', '清仓'):
                     action_str = f"  {r.get('name',''):8s}  {action}  RMB{abs(float(r.get('action_value',0))):>8.2f}"
                     lines.append(action_str)
+
+            # 再显示因现金不足等待的
+            for r in state:
+                if r.get('action') == '等待':
+                    lines.append(f"  {r.get('name',''):8s}  [等待] 信号BUY但现金不足")
+
             lines.append("")
 
         lines.append(f"{'指数':8s} {'权重':>7s} {'市值':>10s} {'成本':>10s} {'收益%':>7s} {'信号':>6s} {'强度':>6s}")
