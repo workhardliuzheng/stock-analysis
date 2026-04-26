@@ -33,6 +33,13 @@ def render_full_report(context: dict) -> str:
         .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         h1 {{ text-align: center; color: #333; margin-bottom: 10px; }}
         .date {{ text-align: center; color: #666; margin-bottom: 30px; }}
+        .portfolio {{ background: #e8f5e9; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4caf50; }}
+        .portfolio h3 {{ margin-top: 0; color: #2e7d32; }}
+        .action-buy {{ color: #e74c3c; font-weight: bold; }}
+        .action-sell {{ color: #27ae60; font-weight: bold; }}
+        .return-pos {{ color: #e74c3c; }}
+        .return-neg {{ color: #27ae60; }}
+        .portfolio-op {{ background: #fff8e1; padding: 10px; border-radius: 5px; margin: 10px 0; }}
         h3 {{ color: #333; margin-top: 25px; }}
         table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
         th, td {{ padding: 12px 15px; text-align: left; border-bottom: 1px solid #eee; }}
@@ -60,6 +67,7 @@ def render_full_report(context: dict) -> str:
         <p class="date">生成时间: {context.get('generated_at', datetime.now().strftime('%Y年%m月%d日 %H:%M:%S'))}</p>
 
         {context.get('market_summary_html', '')}
+        {context.get('portfolio_html', '')}
         {context.get('position_guide_html', '')}
         {context.get('signal_table_html', '')}
         {context.get('advice_html', '')}
@@ -100,6 +108,73 @@ def render_market_summary(overview: dict) -> str:
                 <span class="metric signal-hold">HOLD: {overview.get('hold_count', 0)}</span>
             </p>
             <p>建议持仓比例: <strong>{overview.get('recommended_position', '待计算')}</strong></p>
+        </div>"""
+
+
+def render_portfolio_summary(state: list) -> str:
+    """
+    渲染持仓概览区块。
+
+    Args:
+        state: list of dict, 来自 PortfolioTracker.get_latest_state()
+    """
+    if not state:
+        return ''
+
+    total_pct = float(state[0].get('total_position_pct', 0))
+    cash_pct = float(state[0].get('cash_pct', 0))
+    total_mv = float(state[0].get('total_market_value', 0))
+    trade_date = str(state[0].get('trade_date', ''))
+
+    # 今日操作
+    ops = [r for r in state if r.get('action') not in ('持有', None, 'INIT')]
+    ops_html = ''
+    if ops:
+        ops_html = '<div class="portfolio-op"><strong>今日操作:</strong><br/>'
+        for r in ops:
+            action = r.get('action', '')
+            val = abs(float(r.get('action_value', 0)))
+            name = r.get('name', '')
+            new_w = float(r.get('new_weight_pct', 0))
+            cls = 'action-buy' if r.get('action_value', 0) > 0 else 'action-sell'
+            sign = '+' if r.get('action_value', 0) > 0 else '-'
+            ops_html += f'<span class="{cls}">{name} {action} {sign}RMB{val:,.2f} (->{new_w:.1f}%)</span><br/>'
+        ops_html += '</div>'
+
+    # 持仓表格行
+    rows = ''
+    for r in state:
+        name = r.get('name', '')
+        w = float(r.get('weight_pct', 0))
+        mv = float(r.get('market_value', 0))
+        cost = float(r.get('cost_basis', 0))
+        ret = float(r.get('return_pct', 0))
+        sig = r.get('current_signal', '')
+        strength = float(r.get('signal_strength', 0))
+        ret_cls = 'return-pos' if ret >= 0 else 'return-neg'
+        rows += f"""
+        <tr>
+            <td>{name}</td>
+            <td>{w:.1f}%</td>
+            <td>RMB{mv:,.0f}</td>
+            <td>RMB{cost:,.0f}</td>
+            <td class="{ret_cls}">{ret:+.2f}%</td>
+            <td>{sig}</td>
+            <td>{strength:+.1f}</td>
+        </tr>"""
+
+    return f"""
+        <div class="portfolio">
+            <h3>[PORTFOLIO] 持仓概览 - {trade_date}</h3>
+            <p>总仓位: <strong>{total_pct:.1f}%</strong>  |  现金: {cash_pct:.1f}%  |  总市值: <strong>RMB{total_mv:,.2f}</strong></p>
+            {ops_html}
+            <table>
+                <thead><tr>
+                    <th>指数</th><th>权重</th><th>市值</th><th>成本</th><th>收益</th><th>信号</th><th>强度</th>
+                </tr></thead>
+                <tbody>{rows}
+                </tbody>
+            </table>
         </div>"""
 
 

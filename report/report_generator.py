@@ -22,6 +22,7 @@ from report.html_templates import (
     render_full_report,
     render_market_summary,
     render_signal_table,
+    render_portfolio_summary,
     render_position_guide,
     render_advice_section,
     render_risk_section,
@@ -67,23 +68,43 @@ class UnifiedReportGenerator:
 
     # ==================== 公开接口 ====================
 
-    def generate(self, signals_list: list) -> ReportResult:
+    def generate(self, signals_list: list, update_portfolio: bool = True) -> ReportResult:
         """
         主入口：生成 HTML + 文本报告并保存。
 
         Args:
             signals_list: list of dict，每个 dict 来自 IndexAnalyzer.get_current_signal()
+            update_portfolio: 是否更新持仓跟踪（首次运行后每天设为 True）
 
         Returns:
-            ReportResult: 包含 html, text, 文件路径, 市场概览
+            ReportResult: 包含 html, text, 文件路径, 市场概览, 持仓状态
         """
+        # 持仓跟踪
+        portfolio_state = []
+        portfolio_summary = {}
+        if update_portfolio and signals_list:
+            try:
+                from report.portfolio_tracker import PortfolioTracker
+                tracker = PortfolioTracker()
+                summary = tracker.daily_update(signals_list)
+                portfolio_state = tracker.get_latest_state()
+                portfolio_summary = summary
+                if summary.get('status') == 'ok':
+                    print(f"\n[PORTFOLIO] 持仓更新完成: "
+                          f"仓位 {summary['position_pct']:.1f}% / "
+                          f"买{summary['buy_count']}卖{summary['sell_count']}")
+            except Exception as e:
+                print(f"[WARNING] 持仓跟踪更新失败: {e}")
+
         overview = self._build_market_overview(signals_list)
         advice_list = self._build_position_advice(signals_list)
         advice_text = self._build_investment_advice(signals_list, overview)
         risk_text = self._build_risk_text(overview)
 
-        html = self.generate_html(signals_list, overview, advice_list, advice_text, risk_text)
-        text = self.generate_text(signals_list, overview, advice_list)
+        html = self.generate_html(signals_list, overview, advice_list, advice_text, risk_text,
+                                  portfolio_state=portfolio_state)
+        text = self.generate_text(signals_list, overview, advice_list,
+                                  portfolio_state=portfolio_state)
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         html_path = os.path.join(self.output_dir, f'daily_report_{timestamp}.html')
@@ -109,7 +130,8 @@ class UnifiedReportGenerator:
                       overview: dict = None,
                       advice_list: list = None,
                       advice_text: str = None,
-                      risk_text: str = None) -> str:
+                      risk_text: str = None,
+                      portfolio_state: list = None) -> str:
         """生成 HTML 报告字符串。"""
         if overview is None:
             overview = self._build_market_overview(signals_list)
@@ -124,6 +146,7 @@ class UnifiedReportGenerator:
             'title': '[REPORT] 股市每日投资报告',
             'generated_at': datetime.now().strftime('%Y年%m月%d日 %H:%M:%S'),
             'market_summary_html': render_market_summary(overview),
+            'portfolio_html': render_portfolio_summary(portfolio_state) if portfolio_state else '',
             'signal_table_html': render_signal_table(signals_list),
             'position_guide_html': render_position_guide(advice_list),
             'advice_html': render_advice_section(advice_text) + render_risk_section(risk_text),
@@ -132,7 +155,8 @@ class UnifiedReportGenerator:
 
     def generate_text(self, signals_list: list,
                       overview: dict = None,
-                      advice_list: list = None) -> str:
+                      advice_list: list = None,
+                      portfolio_state: list = None) -> str:
         """生成纯文本报告字符串。"""
         if overview is None:
             overview = self._build_market_overview(signals_list)
@@ -144,6 +168,42 @@ class UnifiedReportGenerator:
         lines.append("[OK] 股市分析系统 - 每日投资报告")
         lines.append(f"[OK] 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         lines.append("=" * 70)
+
+        # 持仓概览（新！）
+        if portfolio_state:
+            lines.append("")
+            lines.append("[PORTFOLIO] 持仓概览")
+            lines.append("-" * 40)
+            total_pct = float(portfolio_state[0].get('total_position_pct', 0))
+            cash_pct = float(portfolio_state[0].get('cash_pct', 0))
+            total_mv = float(portfolio_state[0].get('total_market_value', 0))
+            lines.append(f"  总仓位: {total_pct:.1f}%  |  现金: {cash_pct:.1f}%  |  总市值: RMB{total_mv:,.2f}")
+            # 今日操作
+            ops = [r for r in portfolio_state if r.get('action') not in ('持有', None, 'INIT')]
+            if ops:
+                lines.append("  今日操作:")
+                for r in ops:
+                    action = r.get('action', '')
+                    val = abs(float(r.get('action_value', 0)))
+                    name = r.get('name', '')
+                    new_w = float(r.get('new_weight_pct', 0))
+                    if r.get('action_value', 0) > 0:
+                        lines.append(f"    {name}  {action} +RMB{val:>8.2f}  -> 权重{new_w:.1f}%")
+                    else:
+                        lines.append(f"    {name}  {action} -RMB{val:>8.2f}  -> 权重{new_w:.1f}%")
+            lines.append("")
+            # 持仓明细表
+            lines.append(f"  {'指数':8s} {'权重':>6s} {'市值':>10s} {'成本':>10s} {'收益':>7s} {'信号':>6s}")
+            lines.append("  " + "-" * 53)
+            for r in portfolio_state:
+                name = r.get('name', '')[:8]
+                w = float(r.get('weight_pct', 0))
+                mv = float(r.get('market_value', 0))
+                cost = float(r.get('cost_basis', 0))
+                ret = float(r.get('return_pct', 0))
+                sig = r.get('current_signal', '')
+                lines.append(f"  {name:8s} {w:>5.1f}% RMB{mv:>8,.0f} RMB{cost:>8,.0f} {ret:>+6.2f}% {sig:>6s}")
+            lines.append("")
 
         # 市场概览
         lines.append("")
