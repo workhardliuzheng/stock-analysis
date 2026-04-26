@@ -23,6 +23,13 @@ from entity.models.portfolio_state import PortfolioState
 # 核心常量
 # ============================================================
 
+# 总本金 (初始投入资本，作为仓位/现金比例计算的基准)
+TOTAL_CAPITAL = Decimal('50000')
+
+# 单笔操作比例 (相对于 TOTAL_CAPITAL)
+RATIO_OPEN = Decimal('0.10')    # 建仓: 10% × confidence
+RATIO_ADD = Decimal('0.04')     # 加仓: 4%  × confidence
+
 # 可用指数列表（不含上证综指，已排除）
 TRACKED_CODES = [
     '000688.SH',  # 科创50
@@ -65,17 +72,22 @@ class PortfolioTracker:
 
     # ---------- 初始化 ----------
 
-    def init_positions(self, positions: List[Dict], trade_date: date = None) -> bool:
+    def init_positions(self, positions: List[Dict], trade_date: date = None,
+                       total_capital: Decimal = None) -> bool:
         """
         首次初始化持仓（仅当 portfolio_state 表为空时有效）
 
         Args:
             positions: [{'ts_code','name','cost_basis','market_value'}, ...]
             trade_date: 起始日期，默认今天
+            total_capital: 总本金，默认 TOTAL_CAPITAL (50000)
 
         Returns:
             bool: 是否成功写入
         """
+        if total_capital is None:
+            total_capital = TOTAL_CAPITAL
+
         # 检查是否已有记录
         with get_session() as session:
             exists = session.query(PortfolioState).first()
@@ -97,13 +109,21 @@ class PortfolioTracker:
             total_mv += mv
             rows.append({'ts_code': p['ts_code'], 'name': p.get('name', ''), 'cost': cost, 'mv': mv})
 
-        # 计算权重和收益率
+        # 现金 = 总本金 - 持仓市值
+        cash_mv = total_capital - total_mv
+        if cash_mv < Decimal('0'):
+            cash_mv = Decimal('0')
+            print(f"[WARNING] 持仓市值({total_mv:.2f})超过总本金({total_capital:.2f})，现金设为0")
+
+        grand_total = total_mv + cash_mv  # = total_capital (初始时相等)
+
+        # 写入数据库
         with get_session() as session:
             for r in rows:
-                weight = (r['mv'] / total_mv * Decimal('100')) if total_mv > 0 else Decimal('0')
+                weight = (r['mv'] / grand_total * Decimal('100')) if grand_total > 0 else Decimal('0')
                 ret = ((r['mv'] - r['cost']) / r['cost'] * Decimal('100')) if r['cost'] > 0 else Decimal('0')
-                cash_pct = Decimal('0')  # 首次初始化，假设满仓
-                total_position_pct = Decimal('100')
+                total_position_pct = (total_mv / grand_total * Decimal('100'))
+                cash_pct = (cash_mv / grand_total * Decimal('100'))
 
                 rec = PortfolioState(
                     trade_date=trade_date,
@@ -119,12 +139,14 @@ class PortfolioTracker:
                     new_market_value=r['mv'],
                     new_weight_pct=weight,
                     total_position_pct=total_position_pct,
-                    total_market_value=total_mv,
+                    total_market_value=grand_total,
                     cash_pct=cash_pct,
                 )
                 session.add(rec)
 
-        print(f"[OK] 持仓初始化完成: {len(rows)} 个指数, 总市值 {total_mv:,.2f} RMB, 日期 {trade_date}")
+        print(f"[OK] 持仓初始化完成: {len(rows)} 个指数, "
+              f"持仓市值 {total_mv:,.2f} RMB, 现金 {cash_mv:,.2f} RMB, "
+              f"总本金 {grand_total:,.2f} RMB, 日期 {trade_date}")
         return True
 
     # ---------- 每日更新 ----------
@@ -223,9 +245,27 @@ class PortfolioTracker:
                 'pct_chg': pct_chg,
             })
 
-        # 现金变化
-        total_cash_inflow = sum(r['action_value'] for r in today_rows if r['action_value'] < 0)  # 卖出回流现金
+        # 现金约束：买入金额不能超过可用现金
         total_cash_outflow = sum(r['action_value'] for r in today_rows if r['action_value'] > 0)  # 买入消耗现金
+        total_cash_inflow = sum(r['action_value'] for r in today_rows if r['action_value'] < 0)   # 卖出回流现金
+        available_cash = prev_cash_mv + abs(total_cash_inflow)
+
+        if total_cash_outflow > available_cash and available_cash > Decimal('0'):
+            # 买入超额，按比例缩小所有买入操作
+            ratio = (available_cash / total_cash_outflow)
+            print(f"  [CASH] 买入 {total_cash_outflow:.2f} > 可用 {available_cash:.2f}, 缩放比例 {ratio:.4f}")
+            for r in today_rows:
+                if r['action_value'] > 0:
+                    r['action_value'] = (r['action_value'] * ratio).quantize(Decimal('0.01'))
+                    r['new_mv'] = r['drifted_mv'] + r['action_value']
+                    # 同步更新 operations
+                    for op in operations:
+                        if op['ts_code'] == r['ts_code']:
+                            op['value'] = r['action_value']
+                            op['new_mv'] = r['new_mv']
+                            break
+            total_cash_outflow = sum(r['action_value'] for r in today_rows if r['action_value'] > 0)
+
         cash_mv = prev_cash_mv + abs(total_cash_inflow) - total_cash_outflow
         if cash_mv < Decimal('0'):
             cash_mv = Decimal('0')
@@ -291,7 +331,10 @@ class PortfolioTracker:
         summary = {
             'status': 'ok',
             'trade_date': str(trade_date),
+            'total_capital': float(TOTAL_CAPITAL),
             'total_mv': float(grand_total),
+            'pl': float(grand_total - TOTAL_CAPITAL),
+            'pl_pct': float((grand_total - TOTAL_CAPITAL) / TOTAL_CAPITAL * 100),
             'position_pct': float(total_mv_after / grand_total * 100) if grand_total > 0 else 0,
             'cash_pct': float(cash_mv / grand_total * 100) if grand_total > 0 else 100,
             'operations': [
@@ -309,10 +352,11 @@ class PortfolioTracker:
     def _calc_action(signal: str, confidence: Decimal, drifted_mv: Decimal,
                      cost_basis: Decimal, weight_pct: Decimal) -> Tuple[str, Decimal]:
         """
-        信号 → 具体操作
+        信号 → 具体操作 (金额按 TOTAL_CAPITAL 比例计算)
 
         Rules:
-            - BUY: 权重<5%建仓(confidence×5000元), 权重≥5%加仓(confidence×2000元)
+            - BUY: 权重<5%建仓(confidence × 10% × TOTAL_CAPITAL),
+                   权重≥5%加仓(confidence × 4% × TOTAL_CAPITAL)
             - SELL: 减仓50% (市值减半)
             - HOLD: 不变
 
@@ -321,13 +365,13 @@ class PortfolioTracker:
         """
         if signal == 'BUY':
             if weight_pct < Decimal('5') or drifted_mv < Decimal('100'):
-                # 建仓
-                invest = confidence * Decimal('5000')
+                # 建仓: confidence × 10% 本金
+                invest = confidence * TOTAL_CAPITAL * RATIO_OPEN
                 action_value = invest.quantize(Decimal('0.01'))
                 return ('建仓', action_value)
             else:
-                # 加仓
-                invest = confidence * Decimal('2000')
+                # 加仓: confidence × 4% 本金
+                invest = confidence * TOTAL_CAPITAL * RATIO_ADD
                 action_value = invest.quantize(Decimal('0.01'))
                 return ('加仓', action_value)
 
@@ -414,7 +458,11 @@ class PortfolioTracker:
         total_pct = float(state[0].get('total_position_pct', 0))
         cash_pct = float(state[0].get('cash_pct', 0))
         total_mv = float(state[0].get('total_market_value', 0))
-        lines.append(f"总仓位: {total_pct:.1f}%  |  现金: {cash_pct:.1f}%  |  总市值: RMB{total_mv:,.2f}")
+        pl = total_mv - float(TOTAL_CAPITAL)
+        pl_pct = (total_mv / float(TOTAL_CAPITAL) - 1) * 100
+        lines.append(f"初始本金: RMB{float(TOTAL_CAPITAL):>,.2f}")
+        lines.append(f"当前总值: RMB{total_mv:>,.2f}  (总盈亏: RMB{pl:>+,.2f} / {pl_pct:>+.2f}%)")
+        lines.append(f"总仓位: {total_pct:.1f}%  |  现金: {cash_pct:.1f}%  |  持仓市值: RMB{total_mv * total_pct / 100:,.2f}  |  现金: RMB{total_mv * cash_pct / 100:,.2f}")
         lines.append("")
 
         # 找到今日有操作的记录
