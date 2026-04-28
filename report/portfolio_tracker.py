@@ -171,9 +171,36 @@ class PortfolioTracker:
             print("[WARNING] 无历史持仓数据，跳过 daily_update")
             return {'status': 'skip', 'reason': 'no_history'}
 
-        # 2. 建立信号映射 {ts_code: signal_dict}
+        # 2. 建立信号映射 + 市场状态感知的资产配置调整
         signal_map = {}
         for sig in signals_list:
+            code = sig.get('ts_code', '')
+            signal_map[code] = sig
+
+        # 2b. 市场状态识别 + 信号调整
+        from report.regime_allocator import RegimeAllocator, estimate_market_regime
+        market_regime = estimate_market_regime(signals_list)
+        allocator = RegimeAllocator(market_regime)
+        regime_alloc = allocator.get_allocation()
+        print(f"\n[宏观配置] 市场状态: {market_regime} ({regime_alloc['description']})")
+        print(f"  权益上限: {float(regime_alloc['equity_max'])*100:.0f}% | "
+              f"防御下限: {float(regime_alloc['defense_min'])*100:.0f}% | "
+              f"最低现金: {float(regime_alloc['cash_min'])*100:.0f}%")
+
+        # 对每个信号应用状态调整
+        adjusted_signals = []
+        for sig in signals_list:
+            adjusted = allocator.adjust_signal(sig)
+            adjusted_signals.append(adjusted)
+            mult = adjusted.get('_regime_multiplier', 1.0)
+            if mult != 1.0:
+                print(f"  {sig.get('name',''):8s} {sig.get('final_signal',''):5s} "
+                      f"置信度 {sig.get('final_confidence',0.5):.2f} → {adjusted['final_confidence']:.2f} "
+                      f"(×{mult:.1f} by {market_regime})")
+
+        # 使用调整后的信号重建 signal_map
+        signal_map = {}
+        for sig in adjusted_signals:
             code = sig.get('ts_code', '')
             signal_map[code] = sig
 
