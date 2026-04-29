@@ -299,6 +299,8 @@ if __name__ == "__main__":
                         help='禁用V13宏观因子 (signal/backtest模式)')
     parser.add_argument('--no-bond', action='store_true',
                         help='禁用V17债券跷跷板 (backtest模式，默认启用国债ETF 511010.SH)')
+    parser.add_argument('--optimize-bond', action='store_true',
+                        help='Optuna调优债券跷跷板参数 (backtest模式，需时较长)')
     args = parser.parse_args()
     
     # 日期校验
@@ -354,4 +356,6 @@ if __name__ == "__main__":
             index_max_weight={'000300.SH': 0.10},
             # V17: 债券跷跷板，默认启用国债ETF
             bond_etf_code=None if args.no_bond else '511010.SH',
+            # V18: Optuna债券参数调优
+            optimize_bond=args.optimize_bond,
         )

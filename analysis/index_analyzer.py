@@ -724,27 +724,18 @@ def portfolio_backtest(start_date: str = '20200101',
                        exclude_codes: Optional[set] = None,
                        index_max_weight: Optional[Dict[str, float]] = None,
                        bond_etf_code: Optional[str] = '511010.SH',
+                       optimize_bond: bool = False,
                        **kwargs) -> dict:
     """
     运行组合级回测
 
-    基于 V7-5 fused_signal 信号，按 position_advisor 动态分配权重，
-    对 8 个指数进行组合级仿真回测。
-
     Args:
-        start_date: 回测起始日期 (YYYYMMDD)
-        end_date: 回测结束日期 (YYYYMMDD)，默认为当前日期
-        commission_rate: 单边佣金率 (默认万0.6)
-        use_smart_position: 启用 V10 智能仓位管理
-        cross_index_consensus: V12 启用跨指数趋势共识
-        include_macro: V13 启用宏观因子
-        exclude_codes: 从交易组合中排除的指数代码集合
-        index_max_weight: 各指数最大仓位上限字典
-        bond_etf_code: 国债ETF代码 (如 '511010.SH')，None 表示禁用跷跷板策略
-        **kwargs: 兼容 main.py 传入的其他参数
+        ...
+        bond_etf_code: 国债ETF代码, None 表示禁用跷跷板策略
+        optimize_bond: 若True, 运行Optuna债券参数优化后做最终回测
 
     Returns:
-        dict: 完整回测结果
+        dict: 完整回测结果 (optimize_bond时额外包含optimize_result)
     """
     from analysis.portfolio_backtester import PortfolioBacktester
     bt = PortfolioBacktester(
@@ -758,6 +749,28 @@ def portfolio_backtest(start_date: str = '20200101',
         index_max_weight=index_max_weight,
         bond_etf_code=bond_etf_code,
     )
+
+    if optimize_bond:
+        print("\n[OPTIMIZE] 开始债券参数优化...")
+        opt_result = bt.optimize_bond_params(n_trials=30)
+
+        # 应用最优参数 (已在优化器中完成，这里仅同步)
+        bt.bond_thresholds = opt_result['thresholds']
+        bt.bond_weights = opt_result['weights']
+
+        # 使用缓存回测指标 (避免重新训练ML, 保证一致性)
+        metrics = opt_result['metrics']
+        metrics['optimize_result'] = opt_result
+
+        # 打印报告
+        print(f"\n{'=' * 70}")
+        print(f"  [OK] V18 债券优化完成!")
+        print(f"  最佳阈值: {opt_result['thresholds']}")
+        print(f"  最佳权重: {[f'{w:.0%}' for w in opt_result['weights']]}")
+        print(f"{'=' * 70}")
+
+        return metrics
+
     return bt.run()
 
 

@@ -61,7 +61,9 @@ class PortfolioBacktester:
                  include_macro: bool = True,
                  exclude_codes: Optional[set] = None,
                  index_max_weight: Optional[Dict[str, float]] = None,
-                 bond_etf_code: Optional[str] = None):
+                 bond_etf_code: Optional[str] = None,
+                 bond_thresholds: Optional[list] = None,
+                 bond_weights: Optional[list] = None):
         """
         Args:
             initial_capital: 初始资金
@@ -97,6 +99,9 @@ class PortfolioBacktester:
         self.exclude_codes = exclude_codes or set()
         self.index_max_weight = index_max_weight or {}
         self.bond_etf_code = bond_etf_code
+        # V18: 债券跷跷板可配置参数 (Optuna调优目标)
+        self.bond_thresholds = bond_thresholds or [35, 45, 55]
+        self.bond_weights = bond_weights or [0.75, 0.50, 0.20, 0.0]
         self._bond_data = None  # type: Optional[pd.DataFrame]
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
@@ -239,22 +244,24 @@ class PortfolioBacktester:
 
     def _get_bond_allocation(self, avg_trend: float) -> float:
         """
-        根据平均市场趋势得到债券目标权重
+        根据平均市场趋势得到债券目标权重 (参数化版本)
 
-        跷跷板策略:
-        - avg_trend < 35 (BEAR_TREND):  75% 债券(防御)
-        - avg_trend 35-45 (BEAR_LATE):  50% 债券(防御)
-        - avg_trend 45-55 (SIDEWAYS):   20% 债券(中性)
-        - avg_trend >= 55 (BULL):        0% 债券(进攻)
+        使用 self.bond_thresholds / self.bond_weights 配置:
+        - avg_trend < t[0] -> w[0]
+        - t[0] <= avg_trend < t[1] -> w[1]
+        - t[1] <= avg_trend < t[2] -> w[2]
+        - avg_trend >= t[2] -> w[3]
         """
-        if avg_trend < 35:
-            return 0.75
-        elif avg_trend < 45:
-            return 0.50
-        elif avg_trend < 55:
-            return 0.20
+        t = self.bond_thresholds  # e.g. [35, 45, 55]
+        w = self.bond_weights     # e.g. [0.75, 0.50, 0.20, 0.0]
+        if avg_trend < t[0]:
+            return w[0]
+        elif avg_trend < t[1]:
+            return w[1]
+        elif avg_trend < t[2]:
+            return w[2]
         else:
-            return 0.0
+            return w[3]
 
     def _get_aggregate_trend(self, aligned_data, t, tradeable_codes) -> float:
         """
@@ -273,6 +280,142 @@ class PortfolioBacktester:
         if not scores:
             return 50.0  # default to neutral
         return float(np.mean(scores))
+
+    # ==================== V18: 债券参数Optuna调优 ====================
+
+    def optimize_bond_params(self, n_trials: int = 30) -> dict:
+        """
+        使用Optuna搜索最优债券跷跷板参数
+
+        搜索空间:
+            - thresholds: t1[25,40], t2[t1+5,50], t3[t2+5,65] 步长5
+            - weights: w1[0.40,0.90], w2[0.20,0.70], w3[0.00,0.40] 步长0.05
+
+        Args:
+            n_trials: Optuna搜索次数
+
+        Returns:
+            dict: 包含最佳参数、最佳目标值、完整study对象
+        """
+        print("\n" + "=" * 70)
+        print("  V18 债券跷跷板参数优化 (Optuna)")
+        print("=" * 70)
+
+        # Phase 1: 预加载所有数据 (仅一次，含ML训练)
+        print("\n[1/2] 预加载数据 (仅一次, 耗时较长)...")
+        index_data = self._load_all_indices()
+        common_dates, aligned_data = self._align_dates(index_data)
+        signal_col = self._resolve_signal_column(aligned_data)
+        self._load_bond_data()
+        print(f"  数据就绪: {len(common_dates)} 交易日, {len(aligned_data)} 指数")
+        print(f"  债券ETF: {self.bond_etf_code}, "
+              f"可用数据: {hasattr(self, '_bond_return_lookup')}")
+
+        # 预创建SmartPositionManager (每指数一个, 后续每轮重新创建)
+        from analysis.smart_position_manager import SmartPositionManager
+        all_codes = list(index_data.keys())
+
+        # 预计算背离信号 (静态, 与债券参数无关)
+        divergence_cache = {}
+        if self.use_smart_position:
+            for code in all_codes:
+                divergence_cache[code] = SmartPositionManager._detect_divergences(
+                    aligned_data[code])
+
+        # Phase 2: Optuna搜索
+        print(f"\n[2/2] Optuna搜索 (n_trials={n_trials})...")
+        import optuna
+
+        def objective(trial):
+            # 建议阈值 (单调递增)
+            t1 = trial.suggest_int('t1', 25, 40, step=5)
+            t2 = trial.suggest_int('t2', t1 + 5, 50, step=5)
+            t3 = trial.suggest_int('t3', t2 + 5, 65, step=5)
+
+            # 建议债券权重 (w4固定为0.0, 牛市不配债券)
+            w1 = trial.suggest_float('w1', 0.40, 0.90, step=0.05)
+            w2 = trial.suggest_float('w2', 0.20, 0.70, step=0.05)
+            w3 = trial.suggest_float('w3', 0.00, 0.40, step=0.05)
+
+            # 覆盖债券参数
+            self.bond_thresholds = [t1, t2, t3]
+            self.bond_weights = [w1, w2, w3, 0.0]
+
+            # 重置仿真状态
+            self._portfolio_peak = self.initial_capital
+            self._drawdown_state = 'NORMAL'
+            self._consensus_ema = 0.0
+
+            # 创建全新SmartPositionManager (避免状态污染)
+            if self.use_smart_position:
+                self._smart_managers = {}
+                for code in all_codes:
+                    self._smart_managers[code] = SmartPositionManager()
+                self._divergence_cache = divergence_cache
+
+            # 运行仿真 (不含ML重训, 快速)
+            sim_result = self._simulate(aligned_data, common_dates, signal_col)
+            metrics = self._calculate_metrics(sim_result, common_dates, aligned_data)
+
+            # 目标: 夏普比率 (兼顾收益和风险)
+            sharpe = metrics.get('sharpe_ratio', 0.0)
+            excess_ret = metrics.get('excess_return', 0.0)  # 小数形式
+            # 复合目标: 夏普 + 超额收益/10 (夏普主导, 超额调节)
+            return sharpe + excess_ret
+
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=n_trials)
+
+        # 输出最优结果
+        bp = study.best_params
+        print(f"\n{'=' * 70}")
+        print(f"  [OK] 优化完成!")
+        print(f"  最佳阈值: {bp['t1']}, {bp['t2']}, {bp['t3']}")
+        print(f"  最佳权重: {bp['w1']:.0%}, {bp['w2']:.0%}, {bp['w3']:.0%}, 0%")
+        print(f"  目标值(Sharpe+超额/10): {study.best_value:.4f}")
+        print(f"  搜索次数: {len(study.trials)}")
+        print(f"{'=' * 70}")
+
+        # 用最优参数跑一次缓存仿真，输出完整指标
+        print("\n[Final] 使用最优参数生成最终报告...")
+        self.bond_thresholds = [bp['t1'], bp['t2'], bp['t3']]
+        self.bond_weights = [bp['w1'], bp['w2'], bp['w3'], 0.0]
+        self._portfolio_peak = self.initial_capital
+        self._drawdown_state = 'NORMAL'
+        self._consensus_ema = 0.0
+        if self.use_smart_position:
+            self._smart_managers = {}
+            for code in all_codes:
+                self._smart_managers[code] = SmartPositionManager()
+            self._divergence_cache = divergence_cache
+        final_sim = self._simulate(aligned_data, common_dates, signal_col)
+        final_metrics = self._calculate_metrics(final_sim, common_dates, aligned_data)
+
+        # 生成图表
+        try:
+            chart_path = self._generate_chart(common_dates, final_sim, final_metrics, aligned_data)
+            final_metrics['chart_path'] = chart_path
+        except Exception as e:
+            print(f"  [WARN] 图表生成失败: {e}")
+            final_metrics['chart_path'] = ''
+        try:
+            trade_detail_path = self._generate_trade_detail_chart(common_dates, final_sim, final_metrics, aligned_data)
+            final_metrics['trade_detail_chart_path'] = trade_detail_path
+        except Exception as e:
+            print(f"  [WARN] 买卖详情图生成失败: {e}")
+            final_metrics['trade_detail_chart_path'] = ''
+
+        # 打印报告
+        self._print_report(final_metrics)
+
+        return {
+            'best_params': bp,
+            'best_value': study.best_value,
+            'study': study,
+            'thresholds': [bp['t1'], bp['t2'], bp['t3']],
+            'weights': [bp['w1'], bp['w2'], bp['w3'], 0.0],
+            'metrics': final_metrics,
+        }
 
     # ==================== 数据加载 ====================
 
