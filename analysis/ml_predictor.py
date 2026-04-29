@@ -203,8 +203,15 @@ class MLPredictor:
         result['feat_vol_chg'] = result['vol'].pct_change()
 
         # --- 估值特征 ---
-        result['feat_pe_ttm'] = result.get('pe_ttm', pd.Series(dtype=float))
-        result['feat_pb'] = result.get('pb', pd.Series(dtype=float))
+        # V16-红利低波: 对于无PE/PB数据的品种(如红利低波), 使用中性默认值
+        if 'pe_ttm' in result.columns:
+            result['feat_pe_ttm'] = pd.to_numeric(result['pe_ttm'], errors='coerce').fillna(0)
+        else:
+            result['feat_pe_ttm'] = 0.0
+        if 'pb' in result.columns:
+            result['feat_pb'] = pd.to_numeric(result['pb'], errors='coerce').fillna(0)
+        else:
+            result['feat_pb'] = 0.0
         # 从 JSON 解析百分位
         result['feat_pe_pctl'] = result['percentile_ranks'].apply(
             lambda x: self._extract_json_field(x, 'pe_ttm'))
@@ -231,6 +238,15 @@ class MLPredictor:
         # 宏观因子通过 regime detection 间接影响:
         #   1. macro_score -> _apply_macro_bias() -> 市场状态判断
         #   2. 市场状态 -> 共识阈值 + 因子权重调整
+
+        # V16-红利低波: 修复缺乏PE数据的品种(如红利低波)的ML预测
+        # 当pe_ttm/pb列完全缺失或全为空时, 填充中性值
+        for col in ['feat_pe_ttm', 'feat_pb']:
+            if col in result.columns:
+                result[col] = pd.to_numeric(result[col], errors='coerce').fillna(0)
+        for col in ['feat_pe_pctl', 'feat_pb_pctl']:
+            if col in result.columns:
+                result[col] = pd.to_numeric(result[col], errors='coerce').fillna(50)
 
         # 收集特征列名
         self.feature_columns = [c for c in result.columns if c.startswith('feat_')]
@@ -526,22 +542,25 @@ class MLPredictor:
 
         # 预测值去均值化: 对于长期偏多或偏空的指数，模型预测可能系统性地偏向一侧
         # 去均值后信号基于"比平时预测更好/更差"，而非绝对收益率
+        #
+        # 重要: 逐点判断而非全局开关 — 每个时间点只用该点之前的数据(展开窗口)
+        # 避免新增数据导致历史信号翻盘 (V16-opt缺陷修复)
         pred_series = pd.Series(preds_all)
         pred_expanding_mean = pred_series.expanding(min_periods=20).mean()
+        pred_expanding_std = pred_series.expanding(min_periods=20).std()
         preds_demeaned = (pred_series - pred_expanding_mean).values
         result['ml_predicted_return_demeaned'] = preds_demeaned
 
-        # 选择信号源: 检查原始预测是否存在系统性偏差
-        valid_raw_preds = preds_all[~np.isnan(preds_all)]
-        pred_mean = np.mean(valid_raw_preds) if len(valid_raw_preds) > 0 else 0
-        pred_std = np.std(valid_raw_preds) if len(valid_raw_preds) > 0 else 0
-        # 如果预测均值偏离0超过1个标准差，说明存在系统性偏差，使用去均值版本
-        use_demeaned = abs(pred_mean) > pred_std and pred_std > 0
-        if use_demeaned:
-            signal_source = preds_demeaned
-            print(f"  预测均值偏差: mean={pred_mean:.4f}%, std={pred_std:.4f}% → 启用去均值化信号")
+        # 逐点判断: 展开均值偏离 > 1倍展开标准差 → 启用去均值
+        use_demeaned_mask = (abs(pred_expanding_mean) > pred_expanding_std) & (pred_expanding_std > 0)
+        use_demeaned_mask = use_demeaned_mask.fillna(False).values
+        n_demeaned = int(use_demeaned_mask.sum())
+        if n_demeaned > 0:
+            pct = n_demeaned / len(use_demeaned_mask) * 100
+            print(f"  去均值化: {n_demeaned}/{len(use_demeaned_mask)} 个点启用 ({pct:.1f}%)")
         else:
-            signal_source = preds_all
+            print(f"  去均值化: 所有点均未启用 (预测无系统性偏差)")
+        signal_source = np.where(use_demeaned_mask, preds_demeaned, preds_all)
 
         # 平滑: 如果预测幅度非常小（模型很保守），跳过平滑以保留信号
         signal_std = np.nanstd(signal_source)
@@ -575,7 +594,7 @@ class MLPredictor:
                 metrics['adaptive_buy_threshold'] = round(buy_thresh, 4)
                 metrics['adaptive_sell_threshold'] = round(sell_thresh, 4)
 
-        metrics['use_demeaned'] = use_demeaned
+        metrics['use_demeaned_pct'] = round(n_demeaned / len(signal_source) * 100, 1)
 
         # 存储自适应阈值到 DataFrame，供 signal_generator 使用
         result['ml_buy_threshold'] = buy_thresh
@@ -731,12 +750,13 @@ class MLPredictor:
         # 去均值化 + 平滑 (与 train_and_predict 保持一致)
         pred_series = pd.Series(preds)
         pred_expanding_mean = pred_series.expanding(min_periods=20).mean()
+        pred_expanding_std = pred_series.expanding(min_periods=20).std()
         preds_demeaned = (pred_series - pred_expanding_mean).values
 
-        pred_mean = np.mean(preds)
-        pred_std_val = np.std(preds)
-        use_demeaned = abs(pred_mean) > pred_std_val and pred_std_val > 0
-        signal_source = preds_demeaned if use_demeaned else preds
+        # 逐点判断 (与 train_and_predict 保持一致)
+        use_demeaned_mask = (abs(pred_expanding_mean) > pred_expanding_std) & (pred_expanding_std > 0)
+        use_demeaned_mask = use_demeaned_mask.fillna(False).values
+        signal_source = np.where(use_demeaned_mask, preds_demeaned, preds)
 
         signal_std = np.nanstd(signal_source)
         buy_thresh = self._adaptive_buy_threshold
