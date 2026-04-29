@@ -492,14 +492,19 @@ class PortfolioTracker:
                 PortfolioState.trade_date == latest_date[0]).all()
 
             result = {}
+            _total_mv = Decimal('0')
             for rec in records:
                 result[rec.ts_code] = {
                     'mv': rec.market_value or Decimal('0'),
                     'cost': rec.cost_basis or Decimal('0'),
                     'weight': rec.weight_pct or Decimal('0'),
                 }
-                result['_total_mv'] = rec.total_market_value or Decimal('0')
-                result['_cash_pct'] = rec.cash_pct or Decimal('0')
+                if rec.total_market_value and rec.total_market_value > _total_mv:
+                    _total_mv = rec.total_market_value
+                if rec.cash_pct:
+                    result['_cash_pct'] = rec.cash_pct
+
+            result['_total_mv'] = _total_mv
 
             # 计算现金市值
             total_mv = result.get('_total_mv', Decimal('0'))
