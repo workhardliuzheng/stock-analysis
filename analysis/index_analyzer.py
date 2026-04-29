@@ -197,7 +197,45 @@ class IndexAnalyzer:
         # 信号整合
         print(f"正在生成 {self.name} 的最终信号...")
         self.data = self.signal_generator.generate(self.data)
-        
+
+        # V16-红利低波: 防御品种专用信号策略
+        # 红利低波自身 +30.24% (2020-2026), 但策略贡献为负
+        # 原因: ML/因子信号方向错误 + 熊市权重膨胀
+        # 策略: 用市场状态驱动买卖, 同时限制最大权重
+        from report.regime_allocator import DEFENSE_CODES
+        if self.ts_code in DEFENSE_CODES and 'final_signal' in self.data.columns:
+            n_buy_before = int((self.data['final_signal'] == 'BUY').sum())
+            n_sell_before = int((self.data['final_signal'] == 'SELL').sum())
+            n_hold_before = int((self.data['final_signal'] == 'HOLD').sum())
+
+            # 防御品种策略: 市场状态驱动
+            # 使用 regime_label (已由 regime_detector 生成)
+            if 'regime_label' in self.data.columns:
+                bear = self.data['regime_label'].isin(['BEAR_TREND', 'BEAR_LATE'])
+                bull = self.data['regime_label'] == 'BULL_TREND'
+                highvol = self.data['regime_label'] == 'HIGH_VOL'
+
+                # 熊市/高波动: BUY (防御品在下跌时发挥对冲)
+                # 牛市: HOLD (保持中性权重, 避免拖累)
+                # 震荡/其他: HOLD
+                self.data['final_signal'] = 'HOLD'
+                self.data.loc[bear | highvol, 'final_signal'] = 'BUY'
+
+                # fused_signal 同步 (阻止 MetaLearner 覆盖)
+                self.data['fused_signal'] = self.data['final_signal']
+
+                n_buy_after = int((self.data['final_signal'] == 'BUY').sum())
+                n_sell_after = int((self.data['final_signal'] == 'SELL').sum())
+                n_hold_after = int((self.data['final_signal'] == 'HOLD').sum())
+                print(f"  [防御品种-市场状态驱动] "
+                      f"BUY: {n_buy_before}->{n_buy_after}  "
+                      f"HOLD: {n_hold_before}->{n_hold_after}  "
+                      f"SELL: {n_sell_before}->{n_sell_after}  "
+                      f"(熊市BUY/牛市HOLD)")
+            else:
+                self.data['final_signal'] = 'HOLD'
+                self.data['fused_signal'] = 'HOLD'
+
         return self.data
     
     def _apply_macro_factors(self):
@@ -685,6 +723,7 @@ def portfolio_backtest(start_date: str = '20200101',
                        include_macro: bool = True,
                        exclude_codes: Optional[set] = None,
                        index_max_weight: Optional[Dict[str, float]] = None,
+                       bond_etf_code: Optional[str] = '511010.SH',
                        **kwargs) -> dict:
     """
     运行组合级回测
@@ -701,6 +740,7 @@ def portfolio_backtest(start_date: str = '20200101',
         include_macro: V13 启用宏观因子
         exclude_codes: 从交易组合中排除的指数代码集合
         index_max_weight: 各指数最大仓位上限字典
+        bond_etf_code: 国债ETF代码 (如 '511010.SH')，None 表示禁用跷跷板策略
         **kwargs: 兼容 main.py 传入的其他参数
 
     Returns:
@@ -716,6 +756,7 @@ def portfolio_backtest(start_date: str = '20200101',
         include_macro=include_macro,
         exclude_codes=exclude_codes,
         index_max_weight=index_max_weight,
+        bond_etf_code=bond_etf_code,
     )
     return bt.run()
 

@@ -297,6 +297,8 @@ if __name__ == "__main__":
                         help='禁用V12跨指数趋势共识 (backtest模式)')
     parser.add_argument('--no-macro', action='store_true',
                         help='禁用V13宏观因子 (signal/backtest模式)')
+    parser.add_argument('--no-bond', action='store_true',
+                        help='禁用V17债券跷跷板 (backtest模式，默认启用国债ETF 511010.SH)')
     args = parser.parse_args()
     
     # 日期校验
@@ -346,8 +348,10 @@ if __name__ == "__main__":
             use_smart_position=args.smart_position,
             cross_index_consensus=not args.no_cross_consensus,
             include_macro=not args.no_macro,
-            # 排除上证综指（作为市场观察指数，不持仓）
-            exclude_codes={'000001.SH'},
+            # 排除上证综指（作为市场观察指数，不持仓）+ 红利低波(已用国债ETF替代)
+            exclude_codes={'000001.SH', '930955.CSI'},
             # 沪深300限仓10%（避免重仓低效贡献）
             index_max_weight={'000300.SH': 0.10},
+            # V17: 债券跷跷板，默认启用国债ETF
+            bond_etf_code=None if args.no_bond else '511010.SH',
         )

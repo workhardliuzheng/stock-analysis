@@ -60,7 +60,8 @@ class PortfolioBacktester:
                  cross_index_consensus_enabled: bool = True,
                  include_macro: bool = True,
                  exclude_codes: Optional[set] = None,
-                 index_max_weight: Optional[Dict[str, float]] = None):
+                 index_max_weight: Optional[Dict[str, float]] = None,
+                 bond_etf_code: Optional[str] = None):
         """
         Args:
             initial_capital: 初始资金
@@ -78,6 +79,7 @@ class PortfolioBacktester:
             include_macro: V13 启用宏观因子
             exclude_codes: 从交易组合中排除的指数代码集合（但仍加载数据供跨指数共识）
             index_max_weight: 各指数最大仓位上限字典，如 {'000300.SH': 0.05}
+            bond_etf_code: 国债ETF代码，如 '511010.SH'。启用后按市场状态动态分配权重
         """
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -94,6 +96,8 @@ class PortfolioBacktester:
         self.include_macro = include_macro
         self.exclude_codes = exclude_codes or set()
         self.index_max_weight = index_max_weight or {}
+        self.bond_etf_code = bond_etf_code
+        self._bond_data = None  # type: Optional[pd.DataFrame]
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
         self._portfolio_peak: float = initial_capital
@@ -137,6 +141,20 @@ class PortfolioBacktester:
                 self._smart_managers[code] = SmartPositionManager()
             print(f"  V9 智能仓位管理: 已为 {len(self._smart_managers)} 个指数创建管理器")
 
+        # 1b. 加载债券数据 (防御品种)
+        if self.bond_etf_code:
+            print(f"\n[1b/5] 加载债券数据 ({self.bond_etf_code})...")
+            self._bond_data = self._load_bond_data()
+            if self._bond_data is not None:
+                print(f"  债券数据: {len(self._bond_data)} 行, "
+                      f"范围 {str(self._bond_data['date'].iloc[0])[:10]} ~ "
+                      f"{str(self._bond_data['date'].iloc[-1])[:10]}")
+            else:
+                print("  [WARN] 债券数据加载失败，跳过")
+                self.bond_etf_code = None
+        else:
+            self._bond_data = None
+
         # 2. 日期对齐
         print(f"\n[2/5] 日期对齐... (共 {len(index_data)} 个指数)")
         common_dates, aligned_data = self._align_dates(index_data)
@@ -176,6 +194,85 @@ class PortfolioBacktester:
         self._print_report(metrics)
 
         return metrics
+
+    # ==================== 债券数据加载 ====================
+
+    def _load_bond_data(self) -> Optional[pd.DataFrame]:
+        """从数据库加载债券ETF数据 (简单SQL，不经过ML分析)"""
+        if not self.bond_etf_code:
+            return None
+        try:
+            from sqlalchemy import create_engine, text
+            import yaml, pandas as pd
+            with open('config.yaml', 'r', encoding='utf-8') as f:
+                cfg = yaml.safe_load(f)
+            db = cfg['database']
+            engine = create_engine(f'mysql+pymysql://{db["user"]}:{db["password"]}@{db["host"]}:3306/{db["database"]}')
+            query = text("""
+                SELECT trade_date, `close`, pct_chg
+                FROM ts_stock_data
+                WHERE ts_code = :code
+                ORDER BY trade_date
+            """)
+            with engine.connect() as conn:
+                rows = conn.execute(query, {"code": self.bond_etf_code}).fetchall()
+            if not rows:
+                print(f"  [WARN] 债券ETF {self.bond_etf_code} 无数据")
+                return None
+            df = pd.DataFrame(rows, columns=['date', 'close', 'pct_chg'])
+            df['date'] = pd.to_datetime(df['date'])
+            # 预构建日期->收益率查找表 (加速仿真)
+            self._bond_return_lookup = dict(zip(
+                df['date'].dt.strftime('%Y-%m-%d'),
+                df['pct_chg'].values / 100.0
+            ))
+            self._bond_close_lookup = dict(zip(
+                df['date'].dt.strftime('%Y-%m-%d'),
+                df['close'].values
+            ))
+            return df
+        except Exception as e:
+            print(f"  [ERROR] 加载债券数据失败: {e}")
+            return None
+
+    # ==================== 市场状态 & 债券分配 ====================
+
+    def _get_bond_allocation(self, avg_trend: float) -> float:
+        """
+        根据平均市场趋势得到债券目标权重
+
+        跷跷板策略:
+        - avg_trend < 35 (BEAR_TREND):  75% 债券(防御)
+        - avg_trend 35-45 (BEAR_LATE):  50% 债券(防御)
+        - avg_trend 45-55 (SIDEWAYS):   20% 债券(中性)
+        - avg_trend >= 55 (BULL):        0% 债券(进攻)
+        """
+        if avg_trend < 35:
+            return 0.75
+        elif avg_trend < 45:
+            return 0.50
+        elif avg_trend < 55:
+            return 0.20
+        else:
+            return 0.0
+
+    def _get_aggregate_trend(self, aligned_data, t, tradeable_codes) -> float:
+        """
+        获取当前时间点的平均市场趋势得分
+
+        对已交易指数的 trend_score 取平均，作为市场整体趋势判断
+        """
+        scores = []
+        for code in tradeable_codes:
+            if code in aligned_data:
+                df = aligned_data[code]
+                if 'trend_score' in df.columns and t < len(df):
+                    score = df.iloc[t].get('trend_score')
+                    if score is not None and pd.notna(score):
+                        scores.append(float(score))
+        if not scores:
+            return 50.0  # default to neutral
+        return float(np.mean(scores))
 
     # ==================== 数据加载 ====================
 
@@ -627,6 +724,9 @@ class PortfolioBacktester:
 
         portfolio_value = self.initial_capital
         index_weights = {code: 0.0 for code in tradeable_codes}
+        # V17: 加入债券到权重跟踪
+        if self.bond_etf_code:
+            index_weights[self.bond_etf_code] = 0.0
         prev_target_weights = None
 
         # V10: 重置熔断状态
@@ -653,6 +753,10 @@ class PortfolioBacktester:
         # 跟踪每指数贡献
         index_cumulative_contribution = {code: 0.0 for code in tradeable_codes}
         index_avg_weight_sum = {code: 0.0 for code in tradeable_codes}
+        # V17: 加入债券到贡献跟踪
+        if self.bond_etf_code:
+            index_cumulative_contribution[self.bond_etf_code] = 0.0
+            index_avg_weight_sum[self.bond_etf_code] = 0.0
 
         # 基准: 等权买入持有 (仅可交易指数)
         benchmark_value = self.initial_capital
@@ -688,6 +792,19 @@ class PortfolioBacktester:
                 target_weights = self._apply_cross_index_consensus(
                     aligned_data, t, target_weights)
 
+            # V17: 债券跷跷板 - 根据市场状态分配债券权重
+            if self.bond_etf_code and hasattr(self, '_bond_return_lookup'):
+                avg_trend = self._get_aggregate_trend(aligned_data, t, tradeable_codes)
+                bond_alloc = self._get_bond_allocation(avg_trend)
+                if bond_alloc > 0:
+                    # 缩权益权重腾出债券空间
+                    scale = 1.0 - bond_alloc
+                    target_weights = {c: w * scale for c, w in target_weights.items()}
+                    target_weights[self.bond_etf_code] = bond_alloc
+                else:
+                    # 牛市时债券权重归零
+                    target_weights[self.bond_etf_code] = 0.0
+
             # T+1 延迟: 执行昨日的目标权重
             if t > 0 and prev_target_weights is not None:
                 # 计算调仓佣金
@@ -716,6 +833,17 @@ class PortfolioBacktester:
                         daily_return += ret_contribution
                         index_cumulative_contribution[code] += ret_contribution
 
+            # V17: 债券ETF收益
+            if self.bond_etf_code and hasattr(self, '_bond_return_lookup'):
+                bond_w = index_weights.get(self.bond_etf_code, 0.0)
+                if bond_w > 0:
+                    date_str = common_dates[t].strftime('%Y-%m-%d')
+                    bond_pct = self._bond_return_lookup.get(date_str, 0.0)
+                    if bond_pct != 0.0:
+                        bond_ret = bond_w * bond_pct
+                        daily_return += bond_ret
+                        index_cumulative_contribution[self.bond_etf_code] += bond_ret
+
             if t > 0:
                 portfolio_value *= (1 + daily_return)
                 portfolio_values.append(portfolio_value)
@@ -735,6 +863,8 @@ class PortfolioBacktester:
             index_weights_history.append(dict(index_weights))
             for code in tradeable_codes:
                 index_avg_weight_sum[code] += index_weights.get(code, 0.0)
+            if self.bond_etf_code:
+                index_avg_weight_sum[self.bond_etf_code] += index_weights.get(self.bond_etf_code, 0.0)
 
             # 记录买卖事件
             if prev_target_weights is not None:
@@ -835,6 +965,18 @@ class PortfolioBacktester:
                 'buy_count': n_buy,
                 'sell_count': n_sell,
                 'hold_count': n_hold,
+            }
+
+        # V17: 加入债券ETF到指数贡献表
+        if self.bond_etf_code:
+            bond_name = constant.DEFENSE_CODE_NAME_DICT.get(self.bond_etf_code, self.bond_etf_code)
+            index_stats[self.bond_etf_code] = {
+                'name': bond_name,
+                'avg_weight': sim_result['index_avg_weights'].get(self.bond_etf_code, 0),
+                'contribution': sim_result['index_cumulative_contribution'].get(self.bond_etf_code, 0),
+                'buy_count': 0,
+                'sell_count': 0,
+                'hold_count': 0,
             }
 
         # 交易统计
@@ -1205,6 +1347,15 @@ class PortfolioBacktester:
                 contrib = stats['contribution'] * 100
                 print(f"    {name:<10} {avg_w:>7.1f}% {contrib:>+9.2f}% "
                       f"{stats['buy_count']:>5} {stats['sell_count']:>5} {stats['hold_count']:>5}")
+            # V17: 债券ETF贡献
+            bond_code = self.bond_etf_code
+            if bond_code and bond_code in index_stats:
+                name = index_stats[bond_code]['name']
+                avg_w = index_stats[bond_code]['avg_weight'] * 100
+                contrib = index_stats[bond_code]['contribution'] * 100
+                print(f"    {'─' * 52}")
+                print(f"    {name:<10} {avg_w:>7.1f}% {contrib:>+9.2f}% "
+                      f"{'—':>5} {'—':>5} {'—':>5}")
 
         print(f"\n  [交易统计]")
         print(f"    组合加仓次数:   {metrics['buy_events_count']} 次")

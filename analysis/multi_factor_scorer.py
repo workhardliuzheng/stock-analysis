@@ -119,6 +119,16 @@ class MultiFactorScorer:
         valuation_score = self._score_valuation(row)
         volatility_score = self._score_volatility(row, df, idx)
 
+        # V16-红利低波: 当PE/PB数据全缺失时，valuation权重重分配给trend和momentum
+        pe_pctl = self._get_percentile(row, 'pe_ttm')
+        pb_pctl = self._get_percentile(row, 'pb')
+        if pe_pctl is None and pb_pctl is None:
+            w = dict(w)  # 复制避免修改原字典
+            w['trend'] = w.get('trend', 0.3) + w.get('valuation', 0.2) * 0.5
+            w['momentum'] = w.get('momentum', 0.25) + w.get('valuation', 0.2) * 0.5
+            w['valuation'] = 0.0
+            valuation_score = 50.0  # 中性分，权重已清零不影响
+
         scores = {
             'trend': round(trend_score, 1),
             'momentum': round(momentum_score, 1),
