@@ -313,6 +313,54 @@ class PortfolioTracker:
         if cash_mv < Decimal('0'):
             cash_mv = Decimal('0')
 
+        # ----- 3d. 处理新品种建仓 (信号中有,但DB中还没有的) -----
+        new_codes_added = []
+        for code, plan_op in plan_map.items():
+            if code in tracked_in_db:
+                continue
+            if plan_op.get('action') not in ('建仓', '加仓'):
+                continue
+
+            # 新代码有BUY信号 → 创建初始持仓
+            sig = signal_map.get(code, {})
+            name = TS_CODE_NAME.get(code, code)
+            action_value = plan_op.get('value', Decimal('0'))
+            signal = sig.get('final_signal', 'HOLD') if sig else 'HOLD'
+            confidence = Decimal(str(sig.get('final_confidence', 0.5))) if sig else Decimal('0.5')
+            strength = Decimal(str(sig.get('signal_strength', 0))) if sig else Decimal('0')
+            factor_score = Decimal(str(sig.get('factor_score', 50))) if sig else Decimal('50')
+
+            total_cost += action_value  # 建仓成本
+            total_mv_after += action_value
+            new_codes_added.append(code)
+
+            print(f"  [新品种] {name} 建仓 {float(action_value):.0f}元")
+
+            today_rows.append({
+                'ts_code': code,
+                'name': name,
+                'cost': action_value,
+                'old_mv': Decimal('0'),
+                'drifted_mv': Decimal('0'),
+                'new_mv': action_value,
+                'signal': signal,
+                'strength': strength,
+                'confidence': confidence,
+                'factor_score': factor_score,
+                'action': plan_op.get('action', '建仓'),
+                'action_value': action_value,
+                'pct_chg': Decimal('0'),
+            })
+
+            operations.append({
+                'ts_code': code,
+                'name': name,
+                'action': plan_op.get('action', '建仓'),
+                'value': action_value,
+                'old_mv': Decimal('0'),
+                'new_mv': action_value,
+            })
+
         grand_total = total_mv_after + cash_mv
 
         # 写数据库 - upsert (存在则更新, 不存在则插入)
@@ -386,6 +434,7 @@ class PortfolioTracker:
             ],
             'buy_count': sum(1 for op in operations if op['action'] in ('建仓', '加仓')),
             'sell_count': sum(1 for op in operations if op['action'] in ('减仓', '清仓')),
+            'new_codes': new_codes_added,
         }
         return summary
 
