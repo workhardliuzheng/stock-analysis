@@ -723,19 +723,19 @@ def portfolio_backtest(start_date: str = '20200101',
                        include_macro: bool = True,
                        exclude_codes: Optional[set] = None,
                        index_max_weight: Optional[Dict[str, float]] = None,
-                       bond_etf_code: Optional[str] = '511010.SH',
-                       optimize_bond: bool = False,
+                       defense_etf_code: Optional[str] = '518880.SH',
+                       optimize_defense: bool = False,
                        **kwargs) -> dict:
     """
     运行组合级回测
 
     Args:
         ...
-        bond_etf_code: 国债ETF代码, None 表示禁用跷跷板策略
-        optimize_bond: 若True, 运行Optuna债券参数优化后做最终回测
+        defense_etf_code: 防御ETF代码, None 表示禁用跷跷板策略
+        optimize_defense: 若True, 运行Optuna债券参数优化后做最终回测
 
     Returns:
-        dict: 完整回测结果 (optimize_bond时额外包含optimize_result)
+        dict: 完整回测结果 (optimize_defense时额外包含optimize_result)
     """
     from analysis.portfolio_backtester import PortfolioBacktester
     bt = PortfolioBacktester(
@@ -747,16 +747,16 @@ def portfolio_backtest(start_date: str = '20200101',
         include_macro=include_macro,
         exclude_codes=exclude_codes,
         index_max_weight=index_max_weight,
-        bond_etf_code=bond_etf_code,
+        defense_etf_code=defense_etf_code,
     )
 
-    if optimize_bond:
+    if optimize_defense:
         print("\n[OPTIMIZE] 开始债券参数优化...")
-        opt_result = bt.optimize_bond_params(n_trials=30)
+        opt_result = bt.optimize_defense_params(n_trials=30)
 
         # 应用最优参数 (已在优化器中完成，这里仅同步)
-        bt.bond_thresholds = opt_result['thresholds']
-        bt.bond_weights = opt_result['weights']
+        bt.defense_thresholds = opt_result['thresholds']
+        bt.defense_weights = opt_result['weights']
 
         # 使用缓存回测指标 (避免重新训练ML, 保证一致性)
         metrics = opt_result['metrics']
