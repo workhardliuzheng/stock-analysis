@@ -2203,3 +2203,40 @@ V13下跌段频繁止损-重入(鞭打效应)：主下跌期(2021-12~2024-09)共
 2. 黄金与A股弱负相关, 股灾时避险资金流入
 3. 防御贡献+46.43%, 解释一半超额收益
 4. 组合夏普首次突破0.9, 回撤控制进入-15%以内
+
+## 27. 信号融合规则ML化尝试 (2026-04-30)
+
+### 优化内容
+尝试用XGBoost分类器替代SignalGenerator的if-else规则，学习最优融合策略。
+
+### 实现方案
+- 创建 `analysis/ml_signal_fuser.py`: XGBoost分类器(3种子集成)，5日前瞻标签(BUY/SELL/HOLD)，walk-forward滚动训练
+- 修改 `signal_generator.py`: 支持 use_ml_fusion 参数，优先使用 ml_fused_signal
+- 修改 `index_analyzer.py`: 在信号生成前调用 MLSignalFuser.fit_predict()
+- 修改 `adaptive_fusion_optimizer.py`: MetaLearner加入 ml_fused_signal 作为第5维权重
+- 全链路参数传递: main.py → portfolio_backtest → PortfolioBacktester → IndexAnalyzer
+
+### 回测结果 (2020-01 ~ 2026-04, --no-defense)
+| 方案 | 总收益 | 最大回撤 | 夏普 |
+|------|--------|---------|------|
+| **ML融合** | **+60.49%** | -26.21% | 0.44 |
+| 规则基线 | **+78.49%** | -24.50% | 0.53 |
+| 差异 | **-18.00pp** | 更差 | 更差 |
+
+### 问题分析
+- ML融合信号在部分指数产生噪音: 深证成指贡献-4.56pp, 科创50贡献-9.63pp
+- V7-5 MetaLearner的共识投票抵消了ML融合的积极信号
+- 5日前瞻标签在震荡市产生大量错误标签，导致模型学习到错误模式
+- walk-forward训练引入额外随机性，各指数间效果不一致
+
+### 结论
+**回退if-else规则**，当前规则已足够健壮。ML融合方案需重新设计后再尝试。
+
+### 回滚操作
+- `git checkout` 恢复: signal_generator.py, index_analyzer.py, adaptive_fusion_optimizer.py, portfolio_backtester.py, main.py
+- 删除: analysis/ml_signal_fuser.py 及所有临时测试脚本
+- `--no-ml-fusion` CLI参数已移除
+
+> **最后更新**: 2026-04-30  
+> **版本**: V19 (黄金ETF防御资产接入) — ML融合实验已回退  
+> **分析人**: Zeno
