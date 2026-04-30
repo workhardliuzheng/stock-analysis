@@ -169,13 +169,6 @@ class MarketRegimeDetector:
         result['regime_score'] = self._calc_confidence(
             trend_scores, vol_scores, sent_scores, smoothed_labels)
 
-        # V21: Regime状态特征增强
-        result['regime_duration'] = self._calc_regime_duration(smoothed_labels)
-        result['regime_transition_stay'] = self._calc_transition_prob_by_target(
-            smoothed_labels, target_label=smoothed_labels, stay=True)
-        result['regime_transition_flip'] = self._calc_transition_prob_by_target(
-            smoothed_labels, target_label=smoothed_labels, stay=False)
-
         # 统计
         regime_counts = result['regime_label'].value_counts()
         print(f"[OK] V16 市场状态识别完成")
@@ -557,79 +550,6 @@ class MarketRegimeDetector:
                   f"{n_late_override}天->BEAR_LATE")
 
         return labels
-
-    # ==================== V21: Regime特征增强 ====================
-
-    @staticmethod
-    def _calc_regime_duration(labels: pd.Series) -> pd.Series:
-        """
-        计算连续同状态持续天数
-
-        对 regime_label 序列进行连续分组计数，
-        每组第一天为1，第二天为2，以此类推。
-        状态变化时重置为1。
-        """
-        # 创建变化点标记: 当前不等于前一个 → 新状态开始
-        change_points = labels != labels.shift(1)
-        # 对每个分组编号 (变化点累计和)
-        group_ids = change_points.cumsum()
-        # 组内计数
-        duration = group_ids.groupby(group_ids).cumcount() + 1
-        # 第一天 (change_points 为 NaN 的 shift) 设为1
-        duration = duration.fillna(1).astype(int)
-        return duration
-
-    @staticmethod
-    def _calc_transition_prob_by_target(
-        labels: pd.Series,
-        target_label: pd.Series,
-        stay: bool = True,
-        window: int = 60,
-        min_samples: int = 10,
-    ) -> pd.Series:
-        """
-        计算给定状态下"停留"或"切换"的历史概率
-
-        Args:
-            labels: regime_label 序列
-            target_label: 目标状态序列 (用于逐行判断当前状态)
-            stay: True=计算同一状态延续概率, False=计算切换为其他状态概率
-            window: 滚动窗口大小
-            min_samples: 最少样本要求
-
-        Returns:
-            pd.Series: 0-100 概率值
-        """
-        result = pd.Series(50.0, index=labels.index)  # 默认中性
-
-        for i in range(window, len(labels)):
-            current_state = target_label.iloc[i]
-            if pd.isna(current_state):
-                continue
-
-            # 取前 window 天中同样状态的日子的后续一天
-            past_window = labels.iloc[i - window:i]
-            same_state_mask = past_window.iloc[:-1] == current_state
-            n_same = same_state_mask.sum()
-
-            if n_same < min_samples:
-                continue  # 样本不足，保持中性
-
-            # 关注这些相同状态日的次日状态
-            next_states = past_window.iloc[1:][same_state_mask.values]
-
-            if stay:
-                # 计算停留概率 (次日状态不变)
-                n_stay = (next_states == current_state).sum()
-                prob = n_stay / n_same * 100
-            else:
-                # 计算切换概率 (次日状态变化)
-                n_flip = (next_states != current_state).sum()
-                prob = n_flip / n_same * 100
-
-            result.iloc[i] = prob
-
-        return result
 
     # ==================== 工具方法 ====================
 
