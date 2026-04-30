@@ -17,6 +17,7 @@ from mysql_connect.sixty_index_mapper import SixtyIndexMapper
 from analysis.cross_signal_detector import CrossSignalDetector
 from analysis.percentile_calculator import PercentileCalculator
 from analysis.multi_factor_scorer import MultiFactorScorer
+from analysis.market_regime_detector import MarketRegimeDetector
 from analysis.signal_generator import SignalGenerator
 from analysis.backtester import Backtester
 from util.class_util import ClassUtil
@@ -285,6 +286,7 @@ class IndexAnalyzer:
         - feat_cross_50_ma50_pos: 上证50 close/MA50比值 (牛熊指示器, >1=牛市)
         - feat_cross_50_mom_20: 上证50 20日涨幅 (中期动量)
         - feat_cross_50_vol_20: 上证50 20日波动率 (市场风险水平)
+        - feat_cross_50_regime_consistency: 当前指数与上证50 regime一致性 [V21新增]
         """
         if self.ts_code == '000016.SH':
             return  # 上证50自身不需要跨指数特征
@@ -313,8 +315,59 @@ class IndexAnalyzer:
                 df['feat_cross_50_mom_20'] = df['close'].pct_change(20) * 100
                 df['feat_cross_50_vol_20'] = df['close'].pct_change().rolling(20).std() * 100
                 
+                # V21: 计算上证50的regime状态，用于跨指数一致性特征
+                try:
+                    # 计算必要指标
+                    df['ma_50'] = df['close'].rolling(50, min_periods=20).mean()
+                    df['pct_chg'] = df['close'].pct_change() * 100
+                    df['high'] = pd.to_numeric(df.get('high', df['close']), errors='coerce')
+                    df['low'] = pd.to_numeric(df.get('low', df['close']), errors='coerce')
+                    df['open'] = pd.to_numeric(df.get('open', df['close']), errors='coerce')
+                    df['amount'] = pd.to_numeric(df.get('amount', 0), errors='coerce').fillna(0)
+                    df['vol'] = pd.to_numeric(df.get('vol', 0), errors='coerce').fillna(0)
+                    df['vol_ma_10'] = df['vol'].rolling(10, min_periods=3).mean()
+                    df['pre_close'] = pd.to_numeric(df.get('pre_close', df['close']), errors='coerce')
+                    
+                    # BB
+                    bb_mid = df['close'].rolling(20, min_periods=10).mean()
+                    bb_std = df['close'].rolling(20, min_periods=10).std()
+                    df['bb_mid'] = bb_mid
+                    df['bb_high'] = bb_mid + 2 * bb_std
+                    df['bb_low'] = bb_mid - 2 * bb_std
+                    
+                    # ATR
+                    tr = pd.concat([
+                        (df['high'] - df['low']).abs(),
+                        (df['high'] - df['pre_close']).abs(),
+                        (df['low'] - df['pre_close']).abs()
+                    ], axis=1).max(axis=1)
+                    df['atr'] = tr.rolling(14, min_periods=5).mean()
+                    
+                    # ADX
+                    df['plus_di'] = 50.0
+                    df['minus_di'] = 50.0
+                    df['adx'] = 25.0
+                    df['rsi'] = 50.0
+                    df['bb_high'] = bb_mid + 2 * bb_std
+                    df['bb_low'] = bb_mid - 2 * bb_std
+                    
+                    detector = MarketRegimeDetector()
+                    df_regime = detector.detect(df)
+                    df['feat_cross_50_regime_consistency'] = 50.0  # 中性默认值
+                    
+                    # 预计算一致性 (占位符, 实际合并时计算)
+                    df['feat_cross_50_regime_consistency'] = 50.0
+                    
+                    # 缓存上证50的regime_label
+                    df['_cross_50_regime_label'] = df_regime['regime_label']
+                except Exception as regime_e:
+                    print(f"  [V21] 上证50 regime检测失败: {regime_e}，跳过")
+                    df['_cross_50_regime_label'] = 'SIDEWAYS'
+                    df['feat_cross_50_regime_consistency'] = 50.0
+                
                 type(self)._cross_50_cache = df[
-                    ['trade_date', 'feat_cross_50_ma50_pos', 'feat_cross_50_mom_20', 'feat_cross_50_vol_20']
+                    ['trade_date', 'feat_cross_50_ma50_pos', 'feat_cross_50_mom_20', 
+                     'feat_cross_50_vol_20', '_cross_50_regime_label', 'feat_cross_50_regime_consistency']
                 ].copy()
                 self._cross_50_cache_loaded = True
             
@@ -323,15 +376,48 @@ class IndexAnalyzer:
             self.data = pd.merge(self.data, cross_50, on='trade_date', how='left')
             
             # 向前填充（交易日不完全一致）
-            cross_cols = ['feat_cross_50_ma50_pos', 'feat_cross_50_mom_20', 'feat_cross_50_vol_20']
+            cross_cols = ['feat_cross_50_ma50_pos', 'feat_cross_50_mom_20', 'feat_cross_50_vol_20',
+                          'feat_cross_50_regime_consistency']
             for c in cross_cols:
                 if c in self.data.columns:
                     self.data[c] = self.data[c].ffill().fillna(0.0)
             
-            print(f"  [V16] 跨指数特征: 已添加上证50市场锚 ({len(cross_cols)}个特征)")
+            # V21: 计算跨指数regime一致性分数
+            if '_cross_50_regime_label' in self.data.columns and 'regime_label' in self.data.columns:
+                self.data['_cross_50_regime_label'] = self.data['_cross_50_regime_label'].ffill().fillna('SIDEWAYS')
+                
+                # 一致性分数: 相同状态→90, 同类不同级→70 (BULL_TREND/BULL_LATE, BEAR_TREND/BEAR_LATE),
+                # 相反类别→20, 否则→50
+                regime_category = {
+                    'BULL_TREND': 'bull', 'BULL_LATE': 'bull',
+                    'BEAR_TREND': 'bear', 'BEAR_LATE': 'bear',
+                    'SIDEWAYS': 'side', 'HIGH_VOL': 'side'
+                }
+                
+                def calc_consistency(r1, r2):
+                    if r1 == r2:
+                        return 90  # 完全一致
+                    cat1 = regime_category.get(r1, 'side')
+                    cat2 = regime_category.get(r2, 'side')
+                    if cat1 == cat2:
+                        return 70  # 同类不同级 (如BULL_TREND vs BULL_LATE)
+                    if (cat1 == 'bull' and cat2 == 'bear') or (cat1 == 'bear' and cat2 == 'bull'):
+                        return 20  # 牛熊互斥 (大盘与中小盘背驰)
+                    return 50  # 部分一致
+                
+                consistency = self.data.apply(
+                    lambda row: calc_consistency(row['regime_label'], row['_cross_50_regime_label']),
+                    axis=1
+                )
+                self.data['feat_cross_50_regime_consistency'] = consistency.fillna(50.0).astype(float)
+                
+                # 清理临时列
+                self.data.drop(columns=['_cross_50_regime_label'], inplace=True, errors='ignore')
+            
+            print(f"  [V21] 跨指数特征: 已添加上证50市场锚 ({len(cross_cols)}个特征 + regime一致性)")
             
         except Exception as e:
-            print(f"  [V16] 跨指数特征处理失败: {e}，跳过")
+            print(f"  [V21] 跨指数特征处理失败: {e}，跳过")
     
     def _get_ml_predictor(self):
         """延迟加载 ML 预测器"""

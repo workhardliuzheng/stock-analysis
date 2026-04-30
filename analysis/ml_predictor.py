@@ -234,6 +234,17 @@ class MLPredictor:
             result['feat_regime_sent_score'] = pd.to_numeric(
                 result['regime_sent_score'], errors='coerce').fillna(50)
 
+        # V21: Regime状态特征增强 - 持续时长 & 转换概率
+        if 'regime_duration' in result.columns:
+            result['feat_regime_duration'] = pd.to_numeric(
+                result['regime_duration'], errors='coerce').fillna(1)
+        if 'regime_transition_stay' in result.columns:
+            result['feat_regime_stay_prob'] = pd.to_numeric(
+                result['regime_transition_stay'], errors='coerce').fillna(50)
+        if 'regime_transition_flip' in result.columns:
+            result['feat_regime_flip_prob'] = pd.to_numeric(
+                result['regime_transition_flip'], errors='coerce').fillna(50)
+
         # V13 注: 宏观因子不进入ML特征空间 (会改变模型训练导致信号漂移)
         # 宏观因子通过 regime detection 间接影响:
         #   1. macro_score -> _apply_macro_bias() -> 市场状态判断

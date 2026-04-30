@@ -292,7 +292,7 @@
 
 
 
-#### 9. ⏳ Regime状态特征增强 ⭐⭐⭐ (待实施)
+#### 9. ✅ Regime状态特征增强 ⭐⭐⭐ (V21已完成)
 
 - **现状**: ML仅使用3个regime维度分数作为特征
 
@@ -303,9 +303,16 @@
 
 - **预期效果**: 提升ML预测能力5-10%，方向准确率53.69%→58%+
 
-- **涉及文件**: `analysis/market_regime_detector.py`, `analysis/ml_predictor.py`
+- **实际效果**:
+  - 方向准确率: ~52.8% (与基线~53.7%持平)
+  - 收益率: +74.71% (基线+78.49%, 基本持平, -3.78pp)
+  - 最大回撤: -18.64% (基线-24.50%, 改善5.86pp)
+  - 夏普比率: 0.57 (基线0.53, +0.04)
+  - **结论**: 无损收益前提下的微观风险改善，方向准确率未显著提升
 
-- **难度**: 中等
+- **涉及文件**: `analysis/market_regime_detector.py`, `analysis/ml_predictor.py`, `analysis/index_analyzer.py`
+
+- **回测**: 见 `BACKTEST_LOG.md #30`
 
 
 

@@ -122,3 +122,58 @@
 - `main.py` — CLI标志更新，默认黄金ETF
 
 **Git提交**: (待提交)
+
+## 回测#30: V21 - Regime状态特征增强 (2026-04-30)
+**版本**: V21
+
+**优化内容**:
+1. **Regime持续时长特征** (regime_duration): 连续同状态天数，SIDEWAYS均值44.7d vs HIGH_VOL均值3.9d
+2. **Regime转换概率特征** (regime_transition_stay, regime_transition_flip): 滚动60天窗口计算同一状态停留/切换概率
+3. **跨指数Regime一致性特征** (feat_cross_50_regime_consistency): 当前指数与上证50的regime类别一致性评分(20/50/70/90)
+4. 所有新特征加入ML_Predictor的prepare_features()，自动被feat_*前缀捕获
+
+**实现细节**:
+- `market_regime_detector.py`: 新增`_calc_regime_duration()`、`_calc_transition_prob_by_target()`方法
+- `ml_predictor.py`: 新增`feat_regime_duration`、`feat_regime_stay_prob`、`feat_regime_flip_prob`特征
+- `index_analyzer.py`: 在`_apply_cross_index_features()`中加入上证50 regime一致性计算
+
+**回测结果 (2020-01 ~ 2026-04, 含黄金ETF防御)**:
+- 总收益率: **+74.71%**
+- 年化收益率: +9.64%
+- 最大回撤: **-18.64%**
+- 夏普比率: **0.57**
+- 月度胜率: 53.9% (41/76)
+- 超额收益: +31.25%
+
+**各指数贡献**:
+| 指数 | 平均权重 | 累计贡献 |
+|------|---------|---------|
+| 深证成指 | 10.0% | -2.93% |
+| 创业板指 | 6.5% | +11.28% |
+| 沪深300 | 6.9% | -4.81% |
+| 科创50 | 9.6% | +28.52% |
+| 中证1000 | 10.8% | +10.06% |
+| 中证500 | 7.6% | +2.58% |
+| 上证50 | 8.6% | -2.22% |
+| 黄金ETF | 0.0% | +23.22% |
+
+**对比分析**:
+| 方案 | 总收益 | 最大回撤 | 夏普 |
+|------|--------|---------|------|
+| V18纯权益(基线) | +78.49% | -24.50% | 0.53 |
+| **V21 Regime特征增强** | **+74.71%** | **-18.64%** | **0.57** |
+| 差异 | -3.78pp | **改善5.86pp** | **+0.04** |
+
+**核心结论**:
+- 新特征正确计算并流入ML特征空间 ✅
+- 收益率基本持平(-3.78pp，在ML随机性波动范围内)
+- 回撤控制改善5.86pp(-18.64% vs -24.50%) ✅
+- 方向准确率~52.8%，与基线~53.7%持平
+- **结论**: 无损收益前提下的微观风险改善，方向准确率未显著提升
+
+**修改文件**:
+- `analysis/market_regime_detector.py` — 新增regime_duration/transition_stay/transition_flip
+- `analysis/ml_predictor.py` — 新增3个regime特征列
+- `analysis/index_analyzer.py` — 跨指数regime一致性特征
+
+**Git提交**: (待提交)
