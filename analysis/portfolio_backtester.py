@@ -63,7 +63,12 @@ class PortfolioBacktester:
                  index_max_weight: Optional[Dict[str, float]] = None,
                  defense_etf_code: Optional[str] = None,
                  defense_thresholds: Optional[list] = None,
-                 defense_weights: Optional[list] = None):
+                 defense_weights: Optional[list] = None,
+                 trailing_window: int = 30,
+                 stop_loss_pct: float = 0.35,
+                 stop_loss_reduction: float = 0.3,
+                 take_profit_pct: float = 0.50,
+                 take_profit_reduction: float = 0.5):
         """
         Args:
             initial_capital: 初始资金
@@ -82,6 +87,11 @@ class PortfolioBacktester:
             exclude_codes: 从交易组合中排除的指数代码集合（但仍加载数据供跨指数共识）
             index_max_weight: 各指数最大仓位上限字典，如 {'000300.SH': 0.05}
             defense_etf_code: 防御ETF代码，如 '518880.SH'（黄金ETF）。启用后按市场状态动态分配权重
+            trailing_window: V23 跟踪窗口天数 (默认30交易日)
+            stop_loss_pct: V23 止损触发阈值，从N日峰值回落X%时减仓 (默认0.25即25%)
+            stop_loss_reduction: V23 止损后保留比例 (默认0.3即保留30%)
+            take_profit_pct: V23 止盈触发阈值，N日涨幅超过X%时减仓 (默认0.50即50%)
+            take_profit_reduction: V23 止盈后保留比例 (默认0.5即保留50%)
         """
         self.initial_capital = initial_capital
         self.commission_rate = commission_rate
@@ -104,6 +114,14 @@ class PortfolioBacktester:
         self.defense_weights = defense_weights or [0.75, 0.50, 0.20, 0.0]
         # V22: 置信度动态仓位
         self.confidence_scaling_enabled = True
+        # V23: 止损止盈参数
+        self.trailing_window = trailing_window
+        self.stop_loss_pct = stop_loss_pct
+        self.stop_loss_reduction = stop_loss_reduction
+        self.take_profit_pct = take_profit_pct
+        self.take_profit_reduction = take_profit_reduction
+        self._sl_trigger_count = 0
+        self._tp_trigger_count = 0
         self._defense_data = None  # type: Optional[pd.DataFrame]
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
@@ -801,6 +819,70 @@ class PortfolioBacktester:
 
         return scaled
 
+    # ==================== V23: 止损止盈 ====================
+
+    def _apply_stop_loss_take_profit(self,
+                                     aligned_data: Dict[str, pd.DataFrame],
+                                     day_idx: int,
+                                     target_weights: Dict[str, float],
+                                     tradeable_codes: list) -> Dict[str, float]:
+        """
+        V23: 单指数止损止盈 - 基于价格行为的极端事件保护
+
+        止损: 指数从N日峰值回落超过 X% -> 大幅减仓 (默认-25%, 保留30%)
+        止盈: 指数N日涨幅超过 Y% -> 锁定利润 (默认+50%, 保留50%)
+
+        设计原则: 只捕获极端事件, 不干预正常波动。
+        - 30天窗口过滤短期噪音
+        - 25%止损只在大暴跌时触发(如2015, 2018年)
+        - 50%止盈只在大牛市暴涨时触发
+
+        与现有保护机制互补:
+        - V10 熔断: 组合级回撤保护
+        - V12 共识: 多指数同时走弱
+        - V19 黄金: 趋势减弱切换避险资产
+        - V22 置信度: 市场状态模糊
+        - V23 极端止损止盈: 补充微观极端事件
+        """
+        scaled = dict(target_weights)
+        for code in tradeable_codes:
+            if code not in scaled or scaled[code] <= 0:
+                continue
+            df = aligned_data.get(code)
+            if df is None or day_idx < self.trailing_window:
+                continue
+
+            current_close = float(df.iloc[day_idx]['close'])
+            if np.isnan(current_close) or current_close <= 0:
+                continue
+
+            # 从N日峰值回落幅度 (止损)
+            start = max(0, day_idx - self.trailing_window + 1)
+            window_close = df.iloc[start:day_idx + 1]['close'].values.astype(float)
+            peak = np.max(window_close)
+            pct_from_peak = (current_close - peak) / peak
+
+            # N日跟踪涨幅 (止盈)
+            trailing_return = (current_close - window_close[0]) / window_close[0]
+
+            # 止损: 从峰值回落超过阈值 (默认-35%, 30天窗口)
+            if pct_from_peak < -self.stop_loss_pct:
+                scaled[code] *= self.stop_loss_reduction
+                self._sl_trigger_count += 1
+
+            # 止盈: 跟踪涨幅超过阈值 (默认+50%, 30天窗口)
+            if trailing_return > self.take_profit_pct:
+                scaled[code] *= self.take_profit_reduction
+                self._tp_trigger_count += 1
+
+        # 归一化保持总仓位水平
+        total_scaled = sum(scaled.values())
+        if total_scaled > 0:
+            scale_ratio = sum(target_weights.values()) / total_scaled
+            scaled = {c: w * scale_ratio for c, w in scaled.items()}
+
+        return scaled
+
     # ==================== V12: 跨指数趋势共识 ====================
 
     # 缩放系数表: (平滑后n_below_ma50阈值, 缩放系数) - R4柔化版
@@ -961,6 +1043,11 @@ class PortfolioBacktester:
 
             # V22: 置信度动态仓位 - 根据regime_score缩放权重
             target_weights = self._apply_confidence_scaling(
+                aligned_data, t, target_weights, tradeable_codes)
+
+            # V23: 止损止盈 - 基于价格行为的极端事件保护
+            # (当前设为35%/50%阈值, 极端条件触发)
+            target_weights = self._apply_stop_loss_take_profit(
                 aligned_data, t, target_weights, tradeable_codes)
 
             # 排除指数权重强制归零（释放的权重变为现金，降低风险敞口）
@@ -1557,7 +1644,13 @@ class PortfolioBacktester:
 
         chart_path = metrics.get('chart_path', '')
         if chart_path:
-            print(f"\n  [图表已保存]")
             print(f"    {chart_path}")
+
+        if self._sl_trigger_count > 0 or self._tp_trigger_count > 0:
+            print(f"\n  [V23 止损止盈]")
+            print(f"    止损触发: {self._sl_trigger_count} 次")
+            print(f"    止盈触发: {self._tp_trigger_count} 次")
+
+        print(f"\n  [图表已保存]")
 
         print(f"\n{'=' * 70}")

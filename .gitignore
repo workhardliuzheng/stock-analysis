@@ -34,5 +34,11 @@ daily_report.html
 run_output.log
 dynamic_weight_results.json
 
+# User data (personal trade records)
+positions.csv
+
+# Backtest result images
+records/*.png
+
 # Windows reserved file
 nul

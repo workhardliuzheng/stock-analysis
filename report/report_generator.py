@@ -153,6 +153,158 @@ class UnifiedReportGenerator:
         }
         return render_full_report(context)
 
+    # ==================== 用户实际持仓集成 ====================
+
+    def _build_price_map(self, signals_list: list) -> tuple:
+        """
+        从信号列表构建价格映射。
+
+        Returns:
+            (price_by_code, price_by_name):
+                price_by_code: {ts_code: close_price}
+                price_by_name: {name: close_price} 用于名称模糊匹配
+        """
+        price_by_code = {}
+        price_by_name = {}
+        for sig in signals_list:
+            code = sig.get('ts_code', '')
+            name = sig.get('name', '')
+            close = sig.get('close')
+            if close is not None:
+                price_by_code[code] = close
+                price_by_name[name] = close
+                # 去掉空格，增加匹配成功率
+                price_by_name[name.replace(' ', '')] = close
+        return price_by_code, price_by_name
+
+    def _build_user_positions_text(self, signals_list: list) -> str:
+        """
+        读取 position_tracker 中的实际持仓，生成日报文本段。
+
+        Args:
+            signals_list: 信号数据，用于构建价格映射和信号映射
+
+        Returns:
+            str: 日报持仓段文本，无持仓时返回空字符串
+        """
+        try:
+            from position_tracker import PositionTracker
+
+            tracker = PositionTracker()
+            positions = tracker.get_current_positions()
+            if not positions:
+                return ''
+
+            price_by_code, price_by_name = self._build_price_map(signals_list)
+
+            # 构建当前价格映射 (代码匹配 -> 名称模糊匹配)
+            current_prices = {}
+            for p in positions:
+                code = p['code']
+                name = p['name']
+                if code in price_by_code:
+                    current_prices[code] = price_by_code[code]
+                elif code in price_by_name:
+                    current_prices[code] = price_by_name[code]
+                else:
+                    # 名称子串匹配: "沪深300ETF" -> 信号名包含"沪深300"
+                    matched = False
+                    for sig_name, sig_price in price_by_name.items():
+                        if name and sig_name and (name in sig_name or sig_name in name):
+                            current_prices[code] = sig_price
+                            matched = True
+                            break
+                    if not matched:
+                        # 尝试用 code 匹配 name (tushare返回的信号code可能是ETF代码)
+                        for sig_code, sig_price in price_by_code.items():
+                            last_part = sig_code.split('.')[0]
+                            if last_part in code or code in last_part:
+                                current_prices[code] = sig_price
+                                break
+
+            # 获取日报摘要
+            summary = tracker.get_daily_summary(current_prices)
+
+            # 构建信号映射 (信号名称 -> 信号类型)
+            signal_map = {}
+            for sig in signals_list:
+                sname = sig.get('name', '')
+                signal_map[sname] = sig.get('final_signal', 'HOLD')
+
+            # 可转债推荐列表 (当前持仓中的可转债)
+            cb_codes = [p['code'] for p in positions if p['type'] == '可转债']
+
+            # 匹配操作建议
+            advices = tracker.match_signals(summary, signal_map, cb_codes)
+
+            # ====== 输出文本 ======
+            lines = []
+            lines.append("")
+            lines.append("[POSITIONS] 投资账户日报")
+            lines.append("-" * 50)
+
+            total_cost = summary['total_cost']
+            current_value = summary['current_value']
+            unrealized = summary['unrealized_pnl']
+            realized = tracker.get_realized_pnl()
+            total_pnl = unrealized + realized
+            total_pnl_pct = (total_pnl / total_cost * 100) if total_cost > 0 else 0.0
+
+            dv = current_value - total_cost  # 浮动盈亏(与成本比)
+            dv_pct = (dv / total_cost * 100) if total_cost > 0 else 0.0
+
+            lines.append(f"  总投入: RMB {total_cost:>10,.2f}")
+            lines.append(f"  当前净值: RMB {current_value:>10,.2f}")
+            lines.append(f"  浮动盈亏: {dv:+,.2f} ({dv_pct:+.2f}%)")
+            lines.append(f"  已实现盈亏: {realized:+,.2f}")
+            lines.append(f"  总 盈 亏: {total_pnl:+,.2f} ({total_pnl_pct:+.2f}%)")
+
+            # 持仓明细表头
+            lines.append("")
+            lines.append(f"  {'品种':<6} {'名称':<12} {'代码':<8} {'买入日期':<12} "
+                        f"{'成本价':>8} {'数量':>8} {'市价':>8} {'盈亏':>12} {'操作':>10}")
+            lines.append(f"  {'-'*6} {'-'*12} {'-'*8} {'-'*12} "
+                        f"{'-'*8} {'-'*8} {'-'*8} {'-'*12} {'-'*10}")
+
+            for p in positions:
+                ptype = p['type']
+                name = p['name']
+                code = p['code']
+                buy_date = p['buy_date']
+                buy_price = float(p['buy_price'])
+                qty = float(p['quantity'])
+                curr_price = current_prices.get(code, buy_price)
+                dv2 = (curr_price - buy_price) * qty
+                dv2_pct = (curr_price - buy_price) / buy_price * 100
+
+                # 从建议中获取操作标签
+                action_label = '-'
+                for a in advices:
+                    if a['code'] == code:
+                        action_label = a['action'][:10]
+                        break
+
+                lines.append(f"  {ptype:<6} {name:<12} {code:<8} {buy_date:<12} "
+                            f"{buy_price:>8.3f} {qty:>8.0f} {curr_price:>8.3f} "
+                            f"{dv2:>+,.2f} {action_label:>10}")
+
+            # 操作建议
+            if advices:
+                lines.append("")
+                lines.append("  [操作建议]")
+                for a in advices:
+                    action = a['action']
+                    reason = a['reason']
+                    lines.append(f"  - {a['name']} ({a['code']}): {action} — {reason}")
+
+            return "\n".join(lines)
+
+        except ImportError:
+            # position_tracker 未安装 / 尚未创建
+            return ''
+        except Exception as e:
+            return f"\n\n[WARNING] 持仓信息读取失败: {e}"
+
     def generate_text(self, signals_list: list,
                       overview: dict = None,
                       advice_list: list = None,
@@ -246,6 +398,11 @@ class UnifiedReportGenerator:
             lines.append(f"  {adv['name']}: {adv['operation_text']} | "
                         f"建议仓位 {adv['position_pct']:.0f}% | "
                         f"风险: {adv['risk_level']} | {adv['reason']}")
+
+        # 实际持仓 (用户通过 position_tracker 记录的真实持仓)
+        user_positions = self._build_user_positions_text(signals_list)
+        if user_positions:
+            lines.append(user_positions)
 
         # 风险提示
         lines.append("")
