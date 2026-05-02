@@ -102,6 +102,8 @@ class PortfolioBacktester:
         # V18: 债券跷跷板可配置参数 (Optuna调优目标)
         self.defense_thresholds = defense_thresholds or [35, 45, 55]
         self.defense_weights = defense_weights or [0.75, 0.50, 0.20, 0.0]
+        # V22: 置信度动态仓位
+        self.confidence_scaling_enabled = True
         self._defense_data = None  # type: Optional[pd.DataFrame]
         self._smart_managers = {}  # code -> SmartPositionManager
         # V10: 组合回撤熔断
@@ -756,6 +758,49 @@ class PortfolioBacktester:
 
         return {code: w * multiplier for code, w in target_weights.items()}
 
+    # ==================== V22: 置信度动态仓位 ====================
+
+    def _apply_confidence_scaling(self,
+                                  aligned_data: Dict[str, pd.DataFrame],
+                                  day_idx: int,
+                                  target_weights: Dict[str, float],
+                                  tradeable_codes: list) -> Dict[str, float]:
+        """
+        V22: 根据regime_score缩放仓位权重
+
+        regime_score越高(状态明确)->仓位乘数越大
+        regime_score越低(状态模糊)->仓位乘数越小
+
+        公式: multiplier = 0.3 + 0.7 * (regime_score / 100)
+        regime_score=100 -> 1.0x (满仓)
+        regime_score=50  -> 0.65x
+        regime_score=0   -> 0.3x (最低)
+        """
+        if not self.confidence_scaling_enabled:
+            return target_weights
+
+        scaled = dict(target_weights)
+        for code in tradeable_codes:
+            if code not in scaled or scaled[code] <= 0:
+                continue
+            df = aligned_data.get(code)
+            if df is None or day_idx >= len(df):
+                continue
+            regime_score = df.iloc[day_idx].get('regime_score', 50)
+            if pd.isna(regime_score):
+                regime_score = 50
+            multiplier = 0.3 + 0.7 * (float(regime_score) / 100.0)
+            multiplier = max(0.3, min(1.0, multiplier))
+            scaled[code] = scaled[code] * multiplier
+
+        # 归一化保持总仓位水平
+        total_scaled = sum(scaled.values())
+        if total_scaled > 0:
+            scale_ratio = sum(target_weights.values()) / total_scaled
+            scaled = {c: w * scale_ratio for c, w in scaled.items()}
+
+        return scaled
+
     # ==================== V12: 跨指数趋势共识 ====================
 
     # 缩放系数表: (平滑后n_below_ma50阈值, 缩放系数) - R4柔化版
@@ -913,6 +958,10 @@ class PortfolioBacktester:
                     aligned_data, t, signal_col, codes)
             else:
                 target_weights = self._compute_daily_weights(aligned_data, t, signal_col)
+
+            # V22: 置信度动态仓位 - 根据regime_score缩放权重
+            target_weights = self._apply_confidence_scaling(
+                aligned_data, t, target_weights, tradeable_codes)
 
             # 排除指数权重强制归零（释放的权重变为现金，降低风险敞口）
             for code in self.exclude_codes:
