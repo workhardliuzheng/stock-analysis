@@ -75,6 +75,10 @@ class CbDualLowStrategy:
     MIN_BOND_PRICE = 80.0  # 最低转债价格（止损底线）
     TOP_N_DEFAULT = 7      # 默认选债数量（手动操作友好）
 
+    # 防坑过滤
+    MIN_REMAIN_MONTHS = 6  # 最低剩余期限(月)，排除临近到期风险
+    EXCLUDE_ST = True      # 是否排除正股被ST/*ST的转债
+
     def __init__(self):
         pass
 
@@ -114,6 +118,41 @@ class CbDualLowStrategy:
             float: 双低值
         """
         return bond_price + premium_ratio
+
+    # ==================== 防坑过滤 ====================
+
+    def _is_st_stock(self, stk_short_name: str) -> bool:
+        """
+        判断正股是否被ST/*ST
+
+        交易所对ST股票简称加"ST"前缀，如"ST龙大"
+        """
+        if not stk_short_name or not isinstance(stk_short_name, str):
+            return False
+        return stk_short_name.strip().startswith('ST')
+
+    def _remaining_months(self, maturity_date: str,
+                          trade_date: str) -> float:
+        """
+        计算剩余月份数
+
+        Args:
+            maturity_date: 到期日 YYYYMMDD
+            trade_date: 当前交易日 YYYYMMDD
+
+        Returns:
+            float: 剩余月份（不足1个月按小数计）
+        """
+        if not maturity_date or not trade_date:
+            return float('inf')
+
+        try:
+            md = datetime.strptime(str(maturity_date), '%Y%m%d')
+            td = datetime.strptime(str(trade_date), '%Y%m%d')
+            days = (md - td).days
+            return days / 30.0  # 按30天/月估算
+        except (ValueError, TypeError):
+            return float('inf')
 
     # ==================== 数据获取 ====================
 
@@ -177,6 +216,8 @@ class CbDualLowStrategy:
                 d.ts_code,
                 b.bond_short_name AS bond_name,
                 b.stk_code,
+                b.stk_short_name,
+                b.maturity_date,
                 d.close AS bond_price,
                 b.conv_price,
                 s.close AS stock_close,
@@ -202,8 +243,9 @@ class CbDualLowStrategy:
             return pd.DataFrame()
 
         df = pd.DataFrame(rows, columns=[
-            'ts_code', 'bond_name', 'stk_code', 'bond_price',
-            'conv_price', 'stock_close', 'vol', 'amount'
+            'ts_code', 'bond_name', 'stk_code', 'stk_short_name',
+            'maturity_date', 'bond_price', 'conv_price',
+            'stock_close', 'vol', 'amount'
         ])
 
         # 转换Decimal/其他数值类型为float
@@ -284,6 +326,23 @@ class CbDualLowStrategy:
         # 过滤: 成交量
         if min_vol > 0:
             df = df[df['vol'] >= min_vol]
+
+        # 过滤: 排除正股被ST/*ST的转债
+        if self.EXCLUDE_ST:
+            before = len(df)
+            df = df[~df['stk_short_name'].apply(self._is_st_stock)]
+            excluded_st = before - len(df)
+            if excluded_st > 0:
+                pass  # 静默过滤
+
+        # 过滤: 排除剩余期限不足MIN_REMAIN_MONTHS的转债
+        filtered_maturity = []
+        for _, r in df.iterrows():
+            months = self._remaining_months(r['maturity_date'], trade_date)
+            filtered_maturity.append(months >= self.MIN_REMAIN_MONTHS)
+        df = df[pd.Series(filtered_maturity, index=df.index)]
+        if df.empty:
+            return []
 
         # 计算转股溢价率和双低值
         df['premium_ratio'] = df.apply(
