@@ -70,10 +70,10 @@ class CbDualLowStrategy:
     月频轮动，选最小值 Top N 等权持有
     """
 
-    # 流动性过滤: 日均成交量 > 1000万
+    # 流动性过滤
     MIN_DAILY_VOL = 10000  # 最低成交量(手)，约1000万成交额
     MIN_BOND_PRICE = 80.0  # 最低转债价格（止损底线）
-    TOP_N_DEFAULT = 5      # 默认选债数量
+    TOP_N_DEFAULT = 20     # 默认选债数量（分散化最优）
 
     def __init__(self):
         pass
