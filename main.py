@@ -1,13 +1,15 @@
 """
 股票分析系统 - 统一入口 (整合版)
 
-支持六种运行模式：
+支持八种运行模式：
 1. sync         - 数据同步（同步指数、股票、财务等数据）
 2. plot         - 图表生成（生成技术分析图表）
 3. signal       - 信号生成（生成指数ETF买卖信号）
 4. backtest     - 策略回测（回测多因子/ML/混合策略）
 5. daily_report - 全天流程（同步+分析+报表+推送）
 6. guide        - 使用指南（显示每日操作流程）
+7. cb_signal    - 可转债双低推荐
+8. cb_backtest  - 可转债双低策略回测
 
 使用示例：
     python main.py sync                              # 同步所有数据
@@ -51,6 +53,11 @@ def print_guide():
      - BUY  信号 -> 次日(T+1)开盘时 买入 对应指数ETF
      - SELL 信号 -> 次日(T+1)开盘时 卖出 持有的ETF
      - HOLD 信号 -> 不操作，维持当前仓位
+
+  [可选] 可转债双低推荐:
+     > python main.py cb_signal                      # 查看可转债推荐
+     > python main.py cb_signal --top-n 5            # 只看Top 5
+     > python main.py cb_backtest                    # 可转债策略回测
 
 二、一键全天流程（推荐）
 ----------------
@@ -260,16 +267,24 @@ if __name__ == "__main__":
   python main.py backtest --strategy factor        仅回测多因子策略
   python main.py backtest --execution-timing open  T+1开盘价执行(更真实)
   python main.py backtest --commission 0.000085    自定义佣金率
-  python main.py daily_report                      全天流程：同步+分析+报表
+  python main.py daily_report                      全天流程：同步+分析+报表+邮件推送
   python main.py daily_report --to-email user@example.com  邮件推送
   python main.py guide                            显示每日操作指南
+
+  # 可转债：
+  python main.py cb_signal                        可转债双低推荐 (默认Top 10)
+  python main.py cb_signal --top-n 5              取Top 5
+  python main.py cb_backtest                      可转债双低策略回测
+  python main.py cb_backtest --start-date 20250601 --end-date 20260306 --top-n 10
         """
     )
     parser.add_argument('mode', 
-                        choices=['sync', 'plot', 'signal', 'backtest', 'daily_report', 'guide'],
+                        choices=['sync', 'plot', 'signal', 'backtest', 'daily_report', 'guide',
+                                 'cb_signal', 'cb_backtest'],
                         help='运行模式: sync/plot/signal/backtest/daily_report/guide')
-    parser.add_argument('--start-date', default='20200101', help='同步/回测开始日期 (默认: 20200101)')
+    parser.add_argument('--start-date', default='20250601', help='同步/回测/可转债回测开始日期 (默认: 20250601)')
     parser.add_argument('--end-date', default=None, help='回测结束日期 (默认: 当前日期, 格式: YYYYMMDD)')
+    parser.add_argument('--top-n', type=int, default=10, help='可转债推荐数量 (cb_signal/cb_backtest模式, 默认: 10)')
     parser.add_argument('--index-only', action='store_true', help='仅同步指数数据 (sync模式)')
     parser.add_argument('--ts-code', help='指定指数代码')
     parser.add_argument('--save-dir', help='图表保存目录 (plot模式)')
@@ -359,3 +374,20 @@ if __name__ == "__main__":
             # Optuna防御资产参数调优
             optimize_defense=args.optimize_defense,
         )
+
+    elif args.mode == 'cb_signal':
+        from analysis.cb_strategy import CbDualLowStrategy, print_recommendations
+        print(f"\n[CB] 可转债双低推荐 (Top {args.top_n})")
+        print("=" * 60)
+        strategy = CbDualLowStrategy()
+        recs = strategy.get_recommendations(top_n=args.top_n)
+        print_recommendations(recs)
+
+    elif args.mode == 'cb_backtest':
+        from analysis.cb_strategy import CbDualLowStrategy, print_backtest_result
+        end = args.end_date or datetime.now().strftime('%Y%m%d')
+        print(f"\n[CB] 可转债双低策略回测 ({args.start_date} ~ {end})")
+        print("=" * 60)
+        strategy = CbDualLowStrategy()
+        result = strategy.backtest(args.start_date, end, top_n=args.top_n)
+        print_backtest_result(result)

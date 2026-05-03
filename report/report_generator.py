@@ -305,6 +305,32 @@ class UnifiedReportGenerator:
         except Exception as e:
             return f"\n\n[WARNING] 持仓信息读取失败: {e}"
 
+    # ==================== 可转债双低推荐 ====================
+
+    def _build_cb_section(self) -> str:
+        """生成可转债双低推荐文本段。"""
+        try:
+            from analysis.cb_strategy import CbDualLowStrategy
+            strategy = CbDualLowStrategy()
+            recs = strategy.get_recommendations(top_n=5)
+            if not recs:
+                return ''
+        except Exception:
+            return ''
+
+        lines = []
+        lines.append("")
+        lines.append("[CB] 可转债双低推荐")
+        lines.append("-" * 40)
+        lines.append(f"  (数据日: {recs[0].trade_date[:4]}-{recs[0].trade_date[4:6]}-{recs[0].trade_date[6:]})")
+        lines.append(f"  {'代码':12s} {'名称':10s} {'价格':>7s} {'溢价率':>7s} {'双低值':>8s}")
+        lines.append(f"  {'-'*44}")
+        for r in recs:
+            lines.append(f"  {r.ts_code:12s} {r.bond_name:10s} "
+                        f"{r.bond_price:>7.2f} {r.premium_ratio:>6.1f}% "
+                        f"{r.dual_low:>8.2f}")
+        return "\n".join(lines)
+
     def generate_text(self, signals_list: list,
                       overview: dict = None,
                       advice_list: list = None,
@@ -403,6 +429,11 @@ class UnifiedReportGenerator:
         user_positions = self._build_user_positions_text(signals_list)
         if user_positions:
             lines.append(user_positions)
+
+        # 可转债双低推荐
+        cb_section = self._build_cb_section()
+        if cb_section:
+            lines.append(cb_section)
 
         # 风险提示
         lines.append("")
