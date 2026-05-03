@@ -1219,9 +1219,21 @@ class PortfolioBacktester:
         bm_sharpe = self._sharpe_ratio(bm_dr)
 
         # 月度胜率
-        monthly_wr, months_positive, months_total = self._monthly_win_rate(
+        monthly_wr, months_positive, months_total, monthly_returns = self._monthly_win_rate(
             common_dates, sim_result['daily_returns']
         )
+
+        # 盈亏比 = 平均盈利月份收益率 / 平均亏损月份收益率(绝对值)
+        win_sum = sum(r for r in monthly_returns if r > 0)
+        lose_sum = sum(r for r in monthly_returns if r < 0)
+        win_count = sum(1 for r in monthly_returns if r > 0)
+        lose_count = sum(1 for r in monthly_returns if r < 0)
+        if win_count > 0 and lose_count > 0:
+            profit_loss_ratio = round(
+                (win_sum / win_count) / abs(lose_sum / lose_count), 2
+            )
+        else:
+            profit_loss_ratio = 0.0
 
         # 每指数贡献
         index_stats = {}
@@ -1269,6 +1281,7 @@ class PortfolioBacktester:
             'annualized_return': round(ann_return * 100, 2),
             'max_drawdown': round(max_dd * 100, 2),
             'sharpe_ratio': round(sharpe, 2),
+            'profit_loss_ratio': profit_loss_ratio,
             'monthly_win_rate': round(monthly_wr * 100, 1),
             'months_positive': months_positive,
             'months_total': months_total,
@@ -1309,26 +1322,27 @@ class PortfolioBacktester:
         return float(excess / dr.std() * np.sqrt(252))
 
     @staticmethod
-    def _monthly_win_rate(dates: list, daily_returns: list) -> Tuple[float, int, int]:
+    def _monthly_win_rate(dates: list, daily_returns: list) -> Tuple[float, int, int, list]:
         """
         计算月度胜率
 
         Returns:
-            (win_rate, months_positive, months_total)
+            (win_rate, months_positive, months_total, monthly_returns)
         """
         if len(dates) < 2:
-            return 0.0, 0, 0
+            return 0.0, 0, 0, []
 
         # 按月分组
         df = pd.DataFrame({'date': dates[:len(daily_returns)], 'return': daily_returns})
         df['month'] = pd.to_datetime(df['date']).dt.to_period('M')
         monthly = df.groupby('month')['return'].sum()
+        monthly_ret_list = monthly.tolist()
 
         months_total = len(monthly)
         months_positive = int((monthly > 0).sum())
         win_rate = months_positive / months_total if months_total > 0 else 0.0
 
-        return win_rate, months_positive, months_total
+        return win_rate, months_positive, months_total, monthly_ret_list
 
     # ==================== 图表生成 ====================
 
@@ -1603,6 +1617,7 @@ class PortfolioBacktester:
         print(f"    年化收益率:     {metrics['annualized_return']:+.2f}%")
         print(f"    最大回撤:       -{metrics['max_drawdown']:.2f}%")
         print(f"    夏普比率:       {metrics['sharpe_ratio']:.2f}")
+        print(f"    盈亏比:         {metrics['profit_loss_ratio']:.2f}")
         print(f"    月度胜率:       {metrics['monthly_win_rate']:.1f}% "
               f"({metrics['months_positive']}/{metrics['months_total']} 个月)")
         print(f"    期末净值:       {metrics['final_value']:,.2f}")

@@ -54,6 +54,7 @@ class BacktestResult:
     max_drawdown: float = 0.0
     monthly_win_rate: float = 0.0
     sharpe_ratio: float = 0.0
+    profit_loss_ratio: float = 0.0  # 盈亏比 = 平均盈利/平均亏损
     num_trades: int = 0
     trade_log: list = field(default_factory=list)
     daily_nav: list = field(default_factory=list)
@@ -600,15 +601,30 @@ class CbDualLowStrategy:
 
             win_months = 0
             total_months = 0
+            win_sum = 0.0   # 盈利月份收益率之和
+            lose_sum = 0.0  # 亏损月份收益率之和(负值)
+            win_count = 0
+            lose_count = 0
             for mk in sorted(month_returns.keys()):
                 mr = month_returns[mk]
                 if mr['start'] > 0:
                     ret = (mr['end'] - mr['start']) / mr['start'] * 100
                     if ret > 0:
                         win_months += 1
+                        win_sum += ret
+                        win_count += 1
+                    elif ret < 0:
+                        lose_sum += ret
+                        lose_count += 1
                     total_months += 1
 
             result.monthly_win_rate = (win_months / total_months * 100) if total_months > 0 else 0
+
+            # 盈亏比 = 平均盈利 / 平均亏损(绝对值)
+            if win_count > 0 and lose_count > 0:
+                avg_win = win_sum / win_count
+                avg_lose = abs(lose_sum / lose_count)
+                result.profit_loss_ratio = round(avg_win / avg_lose, 2) if avg_lose > 0 else 0.0
 
             # 夏普比（粗略估算）
             daily_returns = []
@@ -658,6 +674,7 @@ def print_backtest_result(result: BacktestResult):
     print(f"  年化收益率:   {result.annual_return:>+8.2f}%")
     print(f"  最大回撤:     {result.max_drawdown:>8.2f}%")
     print(f"  月度胜率:     {result.monthly_win_rate:>8.1f}%")
+    print(f"  盈亏比:       {result.profit_loss_ratio:>8.2f}")
     print(f"  夏普比率:     {result.sharpe_ratio:>8.2f}")
     print(f"  交易次数:     {result.num_trades}")
     print(f"  运行天数:     {len(result.daily_nav)}")
