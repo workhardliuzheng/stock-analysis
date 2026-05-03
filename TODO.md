@@ -37,9 +37,11 @@
 **目标**: 接入可转债，双低值轮动策略，与宽指系统并行
 
 **组件**:
-- `sync/sync_convertible.py` — Tushare convert API 数据同步
-- `analysis/cb_strategy.py` — 双低因子计算 + 排序选债 + 回测引擎
-- `report_generator.py` — 日报新增可转债推荐section
+- `sync/sync_convertible.py` — Tushare 数据同步 ✅ (已完成)
+- `entity/convertible_bond.py` — 可转债实体类 ✅ (已完成)  
+- `analysis/cb_strategy.py` — 双低因子计算 + 排序选债 + 回测 (待实现)
+- `main.py` — 新增 cb_signal / cb_backtest 命令 (待实现)
+- `report_generator.py` — 日报新增可转债推荐section (待实现)
 
 **数据流**: Tushare → MySQL → 因子计算 → 双低排序 → Top N推荐
 
