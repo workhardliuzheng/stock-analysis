@@ -157,7 +157,7 @@ class UnifiedReportGenerator:
 
     def _build_price_map(self, signals_list: list) -> tuple:
         """
-        从信号列表构建价格映射。
+        从信号列表和基金日线数据构建价格映射。
 
         Returns:
             (price_by_code, price_by_name):
@@ -175,6 +175,29 @@ class UnifiedReportGenerator:
                 price_by_name[name] = close
                 # 去掉空格，增加匹配成功率
                 price_by_name[name.replace(' ', '')] = close
+
+        # 补充ETF基金价格 (fund_daily 表)
+        try:
+            from mysql_connect.db import get_session
+            from sqlalchemy import text
+            with get_session() as s:
+                # 取每个ETF的最新交易日数据
+                rows = s.execute(text("""
+                    SELECT a.ts_code, a.trade_date, a.close
+                    FROM fund_daily a
+                    INNER JOIN (
+                        SELECT ts_code, MAX(trade_date) AS max_date
+                        FROM fund_daily
+                        GROUP BY ts_code
+                    ) b ON a.ts_code = b.ts_code AND a.trade_date = b.max_date
+                """)).fetchall()
+                for row in rows:
+                    code, td, close = row[0], row[1], float(row[2]) if row[2] else 0
+                    if close > 0:
+                        price_by_code[code] = close
+        except Exception:
+            pass  # fund_daily 表不存在时静默忽略
+
         return price_by_code, price_by_name
 
     def _build_user_positions_text(self, signals_list: list) -> str:
@@ -312,7 +335,7 @@ class UnifiedReportGenerator:
         try:
             from analysis.cb_strategy import CbDualLowStrategy
             strategy = CbDualLowStrategy()
-            recs = strategy.get_recommendations(top_n=5)
+            recs = strategy.get_recommendations()
             if not recs:
                 return ''
         except Exception:
